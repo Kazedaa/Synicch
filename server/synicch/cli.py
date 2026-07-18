@@ -27,6 +27,19 @@ def cmd_init(args) -> int:
           f"{'' if config.CAMERA_BACKUP.is_dir() else '   ** NOT FOUND **'}")
     print(f"library    {config.LIBRARY}")
     print(f"timezone   {db.get_setting(conn, 'display_timezone')}")
+
+    # Album folders are hardlinks, which cannot cross filesystems. Catch a
+    # misconfiguration here rather than at the first link attempt.
+    try:
+        a = config.CAMERA_BACKUP.stat().st_dev
+        b = config.HOME.stat().st_dev
+        if a != b:
+            print("\n** WARNING ** backup and library are on different filesystems.")
+            print("   Album folders use hardlinks and will fail. Move SYNICCH_HOME.")
+        else:
+            print("filesystem same as backup -- hardlinks will work")
+    except OSError as e:
+        print(f"filesystem check failed: {e}")
     conn.close()
     return 0
 
