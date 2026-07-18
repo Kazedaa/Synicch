@@ -1,0 +1,116 @@
+"""Command-line entry point."""
+from __future__ import annotations
+
+import argparse
+import sys
+from zoneinfo import ZoneInfo, available_timezones
+
+from . import config, db
+from .indexer import index
+
+
+def _fmt_bytes(n: float) -> str:
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(n) < 1024:
+            return f"{n:.1f}{unit}"
+        n /= 1024
+    return f"{n:.1f}PB"
+
+
+def cmd_init(args) -> int:
+    config.ensure_dirs()
+    conn = db.connect()
+    db.init_db(conn)
+    print(f"database   {config.DB_PATH}")
+    print(f"schema     v{db.schema_version(conn)}")
+    print(f"backup     {config.CAMERA_BACKUP}"
+          f"{'' if config.CAMERA_BACKUP.is_dir() else '   ** NOT FOUND **'}")
+    print(f"library    {config.LIBRARY}")
+    print(f"timezone   {db.get_setting(conn, 'display_timezone')}")
+    conn.close()
+    return 0
+
+
+def cmd_scan(args) -> int:
+    config.ensure_dirs()
+    return _scan(args)
+
+
+def _scan(args) -> int:
+    conn = db.connect()
+    if db.schema_version(conn) == 0:
+        db.init_db(conn)
+
+    print(f"scanning {config.CAMERA_BACKUP}")
+    result = index(conn, verbose=not args.quiet, refresh=args.refresh)
+
+    print()
+    print(f"  seen       {result['seen']}")
+    print(f"  added      {result['added']}")
+    print(f"  updated    {result['updated']}")
+    print(f"  unchanged  {result['skipped']}")
+    print(f"  missing    {len(result['missing'])}")
+    print(f"  errors     {result['errors']}")
+    print(f"  read       {_fmt_bytes(result['bytes_read'])}")
+    print(f"  elapsed    {result['elapsed']:.1f}s"
+          f"  ({result['seen'] / max(result['elapsed'], 0.001):.0f} files/s)")
+
+    if result["missing"]:
+        print(f"\n  {len(result['missing'])} file(s) gone from the backup folder")
+        for m in result["missing"][:10]:
+            print(f"    - {m}")
+        if len(result["missing"]) > 10:
+            print(f"    ... and {len(result['missing']) - 10} more")
+
+    conn.close()
+    return 0
+
+
+def cmd_settings(args) -> int:
+    conn = db.connect()
+    if args.key and args.value is not None:
+        if args.key == "display_timezone":
+            if args.value not in available_timezones():
+                print(f"unknown timezone: {args.value}", file=sys.stderr)
+                print("expected an IANA name, e.g. Asia/Kolkata, America/Los_Angeles",
+                      file=sys.stderr)
+                return 1
+            ZoneInfo(args.value)
+        db.set_setting(conn, args.key, args.value)
+        print(f"{args.key} = {args.value}")
+        if args.key == "display_timezone":
+            print("\nNote: existing photos keep the UTC instant resolved when they")
+            print("were scanned. Run 'synicch scan --refresh' to recompute them.")
+    else:
+        for r in conn.execute("SELECT key, value FROM settings ORDER BY key"):
+            print(f"  {r['key']:26} {r['value']}")
+    conn.close()
+    return 0
+
+
+def main(argv=None) -> int:
+    p = argparse.ArgumentParser(prog="synicch", description="Self-hosted photo library")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("init", help="create directories and database").set_defaults(fn=cmd_init)
+
+    s = sub.add_parser("scan", help="index the backup folder, then make thumbnails")
+    s.add_argument("--refresh", action="store_true",
+                   help="reprocess every file, even unchanged ones")
+    s.add_argument("--workers", type=int, default=3)
+    s.add_argument("--max-seconds", type=float, default=None,
+                   help="stop the decode pass after this long (resumable)")
+    s.add_argument("-q", "--quiet", action="store_true")
+    s.set_defaults(fn=cmd_scan)
+
+    s = sub.add_parser("settings", help="show or change a setting")
+    s.add_argument("key", nargs="?")
+    s.add_argument("value", nargs="?")
+    s.set_defaults(fn=cmd_settings)
+
+    args = p.parse_args(argv)
+    return args.fn(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
