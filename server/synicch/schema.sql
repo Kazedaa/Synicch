@@ -1,0 +1,99 @@
+-- Synicch schema.
+--
+-- Design note: this database owns *decisions* (album membership, trash state,
+-- dismissals). Derived data (fingerprints, scores, thumbnails) is a cache that
+-- can always be recomputed by rescanning. Keep that split intact -- it is what
+-- makes a corrupt database an annoyance rather than a data-loss event.
+
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+
+-- ---------------------------------------------------------------- settings --
+
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+-- ------------------------------------------------------------------- files --
+
+CREATE TABLE IF NOT EXISTS files (
+    id            INTEGER PRIMARY KEY,
+    source_id     INTEGER NOT NULL DEFAULT 1,   -- reserved: second device later
+    rel_path      TEXT    NOT NULL UNIQUE,      -- relative to camera-backup/
+    size          INTEGER NOT NULL,
+    mtime         REAL    NOT NULL,
+
+    quick_fp      TEXT,        -- size + 64KB from each end; cheap dedup candidate
+    sha256        TEXT,        -- full hash, computed lazily and only when it matters
+
+    kind          TEXT    NOT NULL,             -- photo | video | other
+    ext           TEXT,
+    width         INTEGER,    -- after EXIF rotation, so the gallery lays out right
+    height        INTEGER,
+    duration_s    REAL,                         -- video only
+
+    -- Timestamps. Cameras write local time with no zone,
+    -- so the naive value and the resolved instant are stored separately and the
+    -- source is always recorded so trust is visible.
+    captured_local  TEXT,      -- naive ISO, exactly what the camera wrote
+    captured_offset TEXT,      -- '+05:30' when the file actually carried one
+    captured_utc    TEXT,      -- resolved instant, used for all sorting
+    ts_source       TEXT,      -- exif_with_offset | exif | filename | mtime
+
+
+
+    state         TEXT    NOT NULL DEFAULT 'active',   -- active | trashed | purged
+    trashed_at    TEXT,
+
+
+    first_seen    TEXT    NOT NULL,
+    last_scanned  TEXT    NOT NULL,
+    scan_error    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_files_captured  ON files(captured_utc DESC);
+CREATE INDEX IF NOT EXISTS idx_files_state     ON files(state);
+CREATE INDEX IF NOT EXISTS idx_files_quick_fp  ON files(quick_fp);
+CREATE INDEX IF NOT EXISTS idx_files_kind      ON files(kind);
+
+-- ------------------------------------------------------------------ edits ---
+
+-- Crop and rotation are stored as numbers and applied at render time. The
+-- original file is never modified, so an edit costs no storage, cannot corrupt
+-- anything, and reverting is just deleting the row.
+CREATE TABLE IF NOT EXISTS edits (
+    file_id    INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+    rotate     INTEGER NOT NULL DEFAULT 0,   -- 0 | 90 | 180 | 270, clockwise
+    crop_x     REAL,                          -- all four are fractions of the
+    crop_y     REAL,                          -- image, so they survive the
+    crop_w     REAL,                          -- source being re-encoded at a
+    crop_h     REAL,                          -- different resolution
+    updated_at TEXT NOT NULL
+);
+
+-- ------------------------------------------------------------------ audit ---
+
+-- Append-only record of anything that touched bytes on disk. This is the paper
+-- trail for the one code path that can destroy data.
+CREATE TABLE IF NOT EXISTS audit (
+    id        INTEGER PRIMARY KEY,
+    at        TEXT NOT NULL,
+    action    TEXT NOT NULL,
+    file_id   INTEGER,
+    rel_path  TEXT,
+    detail    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS scan_runs (
+    id           INTEGER PRIMARY KEY,
+    started_at   TEXT NOT NULL,
+    finished_at  TEXT,
+    mode         TEXT,
+    files_seen   INTEGER DEFAULT 0,
+    files_added  INTEGER DEFAULT 0,
+    files_updated INTEGER DEFAULT 0,
+    files_missing INTEGER DEFAULT 0,
+    errors       INTEGER DEFAULT 0,
+    notes        TEXT
+);
