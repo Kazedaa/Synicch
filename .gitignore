@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Your reverse proxy's root certificate. The app trusts this and nothing else,
+# so it is specific to your server -- copy your own in, and keep it out of git.
+# See caddy_ca.crt.example
+app/app/src/main/res/raw/caddy_ca.crt
+/caddy_ca.crt
+
+# Android / Gradle
+.gradle/
+build/
+local.properties
+*.apk
+*.keystore
+
+# Editors
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
