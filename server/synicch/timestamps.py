@@ -59,6 +59,20 @@ class Resolved:
         return f"<Resolved {self.local.isoformat()} {self.source}>"
 
 
+def _plausible(d: dt.datetime) -> bool:
+    """Reject the 1970s and the future.
+
+    WhatsApp media and interrupted downloads produce these constantly, and a
+    single bogus date is enough to create a garbage album.
+    """
+    if d.year < config.MIN_PLAUSIBLE_YEAR:
+        return False
+    now = dt.datetime.now(dt.timezone.utc)
+    naive_now = now.replace(tzinfo=None)
+    ref = d.replace(tzinfo=None) if d.tzinfo else d
+    return ref <= naive_now + dt.timedelta(days=1)
+
+
 def _parse_exif_datetime(value) -> dt.datetime | None:
     if not value:
         return None
@@ -153,7 +167,7 @@ def resolve(path: Path, *, tz_name: str, stat_mtime: float,
     tz = ZoneInfo(tz_name)
 
     exif_dt, exif_offset = from_exif(path)
-    if exif_dt:
+    if exif_dt and _plausible(exif_dt):
         if exif_offset:
             tzinfo = _offset_to_tz(exif_offset)
             aware = exif_dt.replace(tzinfo=tzinfo)
@@ -164,7 +178,7 @@ def resolve(path: Path, *, tz_name: str, stat_mtime: float,
                         aware.astimezone(dt.timezone.utc), "exif")
 
     name_dt = from_filename(name or path.name)
-    if name_dt:
+    if name_dt and _plausible(name_dt):
         aware = name_dt.replace(tzinfo=tz)
         return Resolved(name_dt, None,
                         aware.astimezone(dt.timezone.utc), "filename")
