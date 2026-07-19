@@ -32,6 +32,13 @@ TRASH_DIR = "_trash"
 SKIP_NAMES = {".stfolder", ".stignore", ".stversions", ".stglobalignore"}
 SKIP_PREFIXES = (".syncthing.", "~syncthing~")
 
+# Android's MediaStore renames a file that is still being written rather than
+# creating it in place:
+#
+#   .pending-<ts>-NAME   a write still in progress. The file is incomplete, so
+#                        indexing it would record a truncated size, a wrong
+#                        fingerprint, and possibly garbage dimensions. Skipped.
+PENDING_PREFIX = ".pending-"
 
 PHOTO_EXTS = {
     ".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp",

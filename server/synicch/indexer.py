@@ -35,8 +35,12 @@ def should_skip(path: Path, root: Path) -> bool:
             return True
         if part.startswith(config.SKIP_PREFIXES):
             return True
-    return (path.name in config.SKIP_NAMES
-            or path.name.startswith(config.SKIP_PREFIXES))
+    if path.name in config.SKIP_NAMES or path.name.startswith(config.SKIP_PREFIXES):
+        return True
+    # An in-progress Android write. The file is incomplete, so its size,
+    # fingerprint and dimensions would all be wrong. It reappears under its real
+    # name once finished.
+    return path.name.startswith(config.PENDING_PREFIX)
 
 
 def walk(root: Path) -> Iterator[Path]:
