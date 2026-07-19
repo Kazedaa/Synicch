@@ -45,11 +45,14 @@ def connect(db_path: Path | None = None, *, readonly: bool = False) -> sqlite3.C
 
 
 def init_db(conn: sqlite3.Connection) -> None:
-    conn.executescript(_SCHEMA_SQL.read_text())
-
+    # Order matters. schema.sql describes the current shape and includes indexes
+    # over columns that migrations add, but its CREATE TABLE IF NOT EXISTS is a
+    # no-op on an existing table -- so on an older database the migrations have
+    # to add those columns *before* the script tries to index them.
     if schema_version(conn) != 0:
         migrate(conn)
 
+    conn.executescript(_SCHEMA_SQL.read_text())
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     for key, value in config.DEFAULT_SETTINGS.items():
         conn.execute(
