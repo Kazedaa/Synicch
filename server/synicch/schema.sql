@@ -46,6 +46,12 @@ CREATE TABLE IF NOT EXISTS files (
     state         TEXT    NOT NULL DEFAULT 'active',   -- active | trashed | purged
     trashed_at    TEXT,
 
+    -- Filename with Android's .trashed-/.pending- prefix removed, for display
+    -- and for filename-based timestamp parsing.
+    display_name  TEXT,
+    -- Deleted on the phone, still inside Android's ~30 day grace period. Kept
+    -- (keep-forever) but held out of the main timeline.
+    phone_trashed INTEGER NOT NULL DEFAULT 0,
 
     first_seen    TEXT    NOT NULL,
     last_scanned  TEXT    NOT NULL,
@@ -56,6 +62,7 @@ CREATE INDEX IF NOT EXISTS idx_files_captured  ON files(captured_utc DESC);
 CREATE INDEX IF NOT EXISTS idx_files_state     ON files(state);
 CREATE INDEX IF NOT EXISTS idx_files_quick_fp  ON files(quick_fp);
 CREATE INDEX IF NOT EXISTS idx_files_kind      ON files(kind);
+CREATE INDEX IF NOT EXISTS idx_files_ptrash    ON files(phone_trashed);
 
 -- ------------------------------------------------------------------ edits ---
 

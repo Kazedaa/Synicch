@@ -11,9 +11,19 @@ from typing import Any
 
 from . import config
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 _SCHEMA_SQL = Path(__file__).with_name("schema.sql")
 
+# Applied in order to bring an older database up to date. schema.sql always
+# describes the *current* shape, so a fresh database never runs these -- they
+# exist only for databases created by an earlier version.
+_MIGRATIONS: dict[int, list[str]] = {
+    2: [
+        "ALTER TABLE files ADD COLUMN display_name TEXT",
+        "ALTER TABLE files ADD COLUMN phone_trashed INTEGER NOT NULL DEFAULT 0",
+        "CREATE INDEX IF NOT EXISTS idx_files_ptrash ON files(phone_trashed)",
+    ],
+}
 
 
 def connect(db_path: Path | None = None, *, readonly: bool = False) -> sqlite3.Connection:
@@ -36,6 +46,10 @@ def connect(db_path: Path | None = None, *, readonly: bool = False) -> sqlite3.C
 
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(_SCHEMA_SQL.read_text())
+
+    if schema_version(conn) != 0:
+        migrate(conn)
+
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
     for key, value in config.DEFAULT_SETTINGS.items():
         conn.execute(
@@ -44,6 +58,27 @@ def init_db(conn: sqlite3.Connection) -> None:
             (key, value),
         )
 
+
+def migrate(conn: sqlite3.Connection) -> list[str]:
+    """Bring an existing database up to SCHEMA_VERSION."""
+    current = schema_version(conn)
+    applied: list[str] = []
+    for version in sorted(_MIGRATIONS):
+        if version <= current:
+            continue
+        for stmt in _MIGRATIONS[version]:
+            try:
+                conn.execute(stmt)
+                applied.append(f"v{version}: {stmt.split('(')[0].strip()}")
+            except sqlite3.OperationalError as e:
+                # A column that already exists, or a table that does not exist
+                # yet, are both fine -- schema.sql creates the latter straight
+                # after. Anything else is a real problem.
+                msg = str(e).lower()
+                if "duplicate column" not in msg and "no such table" not in msg:
+                    raise
+        conn.execute(f"PRAGMA user_version = {version}")
+    return applied
 
 
 def schema_version(conn: sqlite3.Connection) -> int:

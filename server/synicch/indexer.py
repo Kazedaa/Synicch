@@ -135,7 +135,8 @@ def index(conn, *, root: Path | None = None, verbose: bool = True,
                 conn.execute("UPDATE files SET last_scanned=? WHERE id=?",
                              (now_utc_iso(), prior[0]))
             else:
-                kind, ext = classify(path)
+                display_name, phone_trashed = config.strip_android_prefix(path.name)
+                kind, ext = classify(Path(display_name))
                 width = height = None
                 duration = None
                 err = None
@@ -149,7 +150,8 @@ def index(conn, *, root: Path | None = None, verbose: bool = True,
                     elif kind == "video":
                         width, height, duration = video_metadata(path)
 
-                    ts = resolve(path, tz_name=tz_name, stat_mtime=st.st_mtime)
+                    ts = resolve(path, tz_name=tz_name, stat_mtime=st.st_mtime,
+                                 name=display_name)
                     local, offset, utc, source = ts.as_row()
                 except Exception as e:  # never let one bad file stop a scan
                     errors += 1
@@ -164,11 +166,12 @@ def index(conn, *, root: Path | None = None, verbose: bool = True,
                         """UPDATE files SET size=?, mtime=?, quick_fp=?, kind=?, ext=?,
                                width=?, height=?, duration_s=?,
                                captured_local=?, captured_offset=?, captured_utc=?,
-                               ts_source=?,
+                               ts_source=?, display_name=?, phone_trashed=?,
                                last_scanned=?, scan_error=?
                            WHERE id=?""",
                         (st.st_size, st.st_mtime, fp, kind, ext, width, height,
                          duration, local, offset, utc, source,
+                         display_name, int(phone_trashed),
                          now_utc_iso(), err, prior[0]),
                     )
                     updated += 1
@@ -177,10 +180,12 @@ def index(conn, *, root: Path | None = None, verbose: bool = True,
                         """INSERT INTO files(rel_path, size, mtime, quick_fp, kind, ext,
                                width, height, duration_s,
                                captured_local, captured_offset, captured_utc, ts_source,
+                               display_name, phone_trashed,
                                state, first_seen, last_scanned, scan_error)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?, 'active', ?, ?, ?)""",
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'active', ?, ?, ?)""",
                         (rel, st.st_size, st.st_mtime, fp, kind, ext, width, height,
                          duration, local, offset, utc, source,
+                         display_name, int(phone_trashed),
                          now_utc_iso(), now_utc_iso(), err),
                     )
                     added += 1

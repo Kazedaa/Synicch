@@ -32,13 +32,20 @@ TRASH_DIR = "_trash"
 SKIP_NAMES = {".stfolder", ".stignore", ".stversions", ".stglobalignore"}
 SKIP_PREFIXES = (".syncthing.", "~syncthing~")
 
-# Android's MediaStore renames a file that is still being written rather than
-# creating it in place:
+# Android's MediaStore renames files rather than deleting them:
 #
 #   .pending-<ts>-NAME   a write still in progress. The file is incomplete, so
 #                        indexing it would record a truncated size, a wrong
 #                        fingerprint, and possibly garbage dimensions. Skipped.
+#
+#   .trashed-<ts>-NAME   deleted by the user, held ~30 days before Android
+#                        removes it for good. The bytes are intact, so these are
+#                        indexed -- under keep-forever a photo deleted on the
+#                        phone is exactly what the server is here to preserve --
+#                        but they are marked so they can be kept out of the main
+#                        timeline and offered up in Cleanup instead.
 PENDING_PREFIX = ".pending-"
+TRASHED_PREFIX = ".trashed-"
 
 PHOTO_EXTS = {
     ".jpg", ".jpeg", ".png", ".heic", ".heif", ".webp",
@@ -68,6 +75,21 @@ DEFAULT_SETTINGS = {
     "short_video_max_s": "1.5",
     "schema_note": "settings are strings; callers cast",
 }
+
+
+def strip_android_prefix(name: str) -> tuple[str, bool]:
+    """Returns (real filename, was_trashed).
+
+    '.trashed-1787278044-IMG_20251106_121032889_HDR.jpg'
+        -> ('IMG_20251106_121032889_HDR.jpg', True)
+    """
+    for prefix in (TRASHED_PREFIX, PENDING_PREFIX):
+        if name.startswith(prefix):
+            rest = name[len(prefix):]
+            ts, sep, real = rest.partition("-")
+            if sep and ts.isdigit() and real:
+                return real, prefix == TRASHED_PREFIX
+    return name, False
 
 
 def ensure_dirs() -> None:
