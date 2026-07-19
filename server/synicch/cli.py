@@ -79,6 +79,67 @@ def _scan(args) -> int:
     return 0
 
 
+def cmd_status(args) -> int:
+    conn = db.connect(readonly=True)
+    total, active = conn.execute(
+        "SELECT COUNT(*), SUM(state='active') FROM files").fetchone()
+    print(f"files          {total}   ({active or 0} active)")
+
+    print("\nby kind")
+    for r in conn.execute(
+            "SELECT kind, COUNT(*) n, SUM(size) b FROM files GROUP BY kind ORDER BY n DESC"):
+        print(f"  {r['kind']:8} {r['n']:6}  {_fmt_bytes(r['b'] or 0)}")
+
+    ptrash, ptrash_b = conn.execute(
+        "SELECT COUNT(*), COALESCE(SUM(size),0) FROM files WHERE phone_trashed=1"
+    ).fetchone()
+    if ptrash:
+        print(f"\nphone trash    {ptrash}  {_fmt_bytes(ptrash_b)}"
+              f"   (deleted on the phone, kept here)")
+
+    print("\ntimestamp source")
+    for r in conn.execute(
+            "SELECT ts_source, COUNT(*) n FROM files GROUP BY ts_source ORDER BY n DESC"):
+        print(f"  {str(r['ts_source']):18} {r['n']:6}")
+
+    row = conn.execute(
+        "SELECT MIN(captured_utc) a, MAX(captured_utc) b FROM files "
+        "WHERE captured_utc IS NOT NULL").fetchone()
+    if row and row["a"]:
+        print(f"\ndate range     {row['a'][:10]}  ..  {row['b'][:10]}")
+
+    dupes = conn.execute(
+        "SELECT COUNT(*) FROM (SELECT quick_fp FROM files WHERE quick_fp IS NOT NULL "
+        "GROUP BY quick_fp HAVING COUNT(*) > 1)").fetchone()[0]
+    print(f"dup candidates {dupes}   (fingerprint matches, unconfirmed)")
+
+    errs = conn.execute(
+        "SELECT COUNT(*) FROM files WHERE scan_error IS NOT NULL").fetchone()[0]
+    if errs:
+        print(f"scan errors    {errs}")
+
+    thumbed = conn.execute(
+        "SELECT COUNT(*) FROM files WHERE thumb_at IS NOT NULL").fetchone()[0]
+    scored = conn.execute("SELECT COUNT(*) FROM scores").fetchone()[0]
+    print(f"\nthumbnails     {thumbed}/{total}")
+    print(f"scored         {scored}/{total}")
+    if scored:
+        r = conn.execute(
+            "SELECT MIN(laplacian_var) lo, AVG(laplacian_var) av, "
+            "MAX(laplacian_var) hi FROM scores WHERE laplacian_var IS NOT NULL"
+        ).fetchone()
+        print(f"  sharpness    min {r['lo']:.0f}  avg {r['av']:.0f}  max {r['hi']:.0f}"
+              f"   (calibrate blur_threshold against this)")
+
+    print(f"\ntimezone       {db.get_setting(conn, 'display_timezone')}")
+    last = conn.execute(
+        "SELECT * FROM scan_runs ORDER BY id DESC LIMIT 1").fetchone()
+    if last:
+        print(f"last scan      {last['started_at']}  ({last['notes'] or ''})")
+    conn.close()
+    return 0
+
+
 def cmd_settings(args) -> int:
     conn = db.connect()
     if args.key and args.value is not None:
@@ -115,6 +176,8 @@ def main(argv=None) -> int:
                    help="stop the decode pass after this long (resumable)")
     s.add_argument("-q", "--quiet", action="store_true")
     s.set_defaults(fn=cmd_scan)
+
+    sub.add_parser("status", help="library summary").set_defaults(fn=cmd_status)
 
     s = sub.add_parser("settings", help="show or change a setting")
     s.add_argument("key", nargs="?")
