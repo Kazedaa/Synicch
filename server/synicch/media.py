@@ -14,7 +14,7 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 from . import config
 
@@ -41,16 +41,20 @@ def preview_path(file_id: int) -> Path:
 
 
 def _open_oriented(path: Path, target: int) -> Image.Image:
-    """Open at roughly `target` pixels.
+    """Open at roughly `target` pixels, with EXIF rotation already applied.
 
     draft() uses the JPEG format's own scaling to decode at 1/2, 1/4 or 1/8
     size, which is several times faster than decoding fully and then resizing.
+    exif_transpose matters more than it looks: without it every portrait photo
+    is stored sideways, and the width/height recorded for the gallery layout
+    would be swapped.
     """
     img = Image.open(path)
     try:
         img.draft("RGB", (target, target))
     except Exception:
         pass  # draft is JPEG-only; harmless elsewhere
+    img = ImageOps.exif_transpose(img)
     return img.convert("RGB")
 
 
