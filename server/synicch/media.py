@@ -40,9 +40,18 @@ def preview_path(file_id: int) -> Path:
     return config.PREVIEWS / _shard(file_id) / f"{file_id}.jpg"
 
 
-def _open_oriented(path: Path) -> Image.Image:
-    """Open and convert to RGB."""
-    return Image.open(path).convert("RGB")
+def _open_oriented(path: Path, target: int) -> Image.Image:
+    """Open at roughly `target` pixels.
+
+    draft() uses the JPEG format's own scaling to decode at 1/2, 1/4 or 1/8
+    size, which is several times faster than decoding fully and then resizing.
+    """
+    img = Image.open(path)
+    try:
+        img.draft("RGB", (target, target))
+    except Exception:
+        pass  # draft is JPEG-only; harmless elsewhere
+    return img.convert("RGB")
 
 
 def dhash(img: Image.Image) -> str:
@@ -95,7 +104,7 @@ def _write_jpeg(img: Image.Image, dest: Path, max_edge: int, quality: int) -> No
 
 def process_photo(path: Path, file_id: int) -> dict:
     """Thumbnail + oriented dimensions + all scores, from one decode."""
-    img = _open_oriented(path)
+    img = _open_oriented(path, PREVIEW_MAX)
     try:
         width, height = img.size
         result = _scores(img)
@@ -137,7 +146,7 @@ def make_preview(path: Path, file_id: int, edit=None) -> Path:
     dest = preview_path(file_id)
     if dest.exists():
         return dest
-    img = _open_oriented(path)
+    img = _open_oriented(path, PREVIEW_MAX)
     try:
         _write_jpeg(apply_edits(img, edit), dest, PREVIEW_MAX, PREVIEW_QUALITY)
     finally:
