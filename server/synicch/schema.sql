@@ -64,6 +64,23 @@ CREATE INDEX IF NOT EXISTS idx_files_quick_fp  ON files(quick_fp);
 CREATE INDEX IF NOT EXISTS idx_files_kind      ON files(kind);
 CREATE INDEX IF NOT EXISTS idx_files_ptrash    ON files(phone_trashed);
 
+-- ------------------------------------------------------- detection results --
+
+-- algo_version lets a threshold change invalidate cleanly, and storing raw
+-- scores (not just pass/fail) means retuning is a query rather than a rescan.
+CREATE TABLE IF NOT EXISTS scores (
+    file_id       INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+    algo_version  INTEGER NOT NULL,
+    laplacian_var REAL,
+    luma_mean     REAL,
+    luma_std      REAL,
+    clipped_frac  REAL,
+    dhash         TEXT,
+    black_frac    REAL,
+    freeze_frac   REAL,
+    computed_at   TEXT NOT NULL
+);
+
 -- ------------------------------------------------------------------ edits ---
 
 -- Crop and rotation are stored as numbers and applied at render time. The

@@ -18,6 +18,10 @@ from PIL import Image
 
 from . import config
 
+# Bump when a score's meaning changes, so stale rows can be recomputed without
+# guessing which ones are stale.
+ALGO_VERSION = 1
+
 THUMB_MAX = 400        # grid tile
 PREVIEW_MAX = 1600     # lightbox
 THUMB_QUALITY = 78
@@ -41,6 +45,45 @@ def _open_oriented(path: Path) -> Image.Image:
     return Image.open(path).convert("RGB")
 
 
+def dhash(img: Image.Image) -> str:
+    """64-bit perceptual fingerprint: is each pixel brighter than its neighbour."""
+    small = img.convert("L").resize((9, 8), Image.LANCZOS)
+    a = np.asarray(small, dtype=np.int16)
+    bits = (a[:, 1:] > a[:, :-1]).flatten()
+    value = 0
+    for bit in bits:
+        value = (value << 1) | int(bit)
+    return f"{value:016x}"
+
+
+def hamming(a: str, b: str) -> int:
+    return bin(int(a, 16) ^ int(b, 16)).count("1")
+
+
+def _scores(img: Image.Image) -> dict:
+    """Sharpness, brightness and clipping, all from one grayscale array."""
+    g = img.convert("L")
+    a = np.asarray(g, dtype=np.float32)
+
+    if a.shape[0] < 3 or a.shape[1] < 3:
+        return {"laplacian_var": 0.0, "luma_mean": float(a.mean()) if a.size else 0.0,
+                "luma_std": 0.0, "clipped_frac": 0.0}
+
+    # 4-neighbour Laplacian. High variance means lots of strong edges, i.e. in
+    # focus; a blurred image has little to vary.
+    lap = (-4.0 * a[1:-1, 1:-1]
+           + a[:-2, 1:-1] + a[2:, 1:-1]
+           + a[1:-1, :-2] + a[1:-1, 2:])
+
+    clipped = float(((a <= 2) | (a >= 253)).mean())
+    return {
+        "laplacian_var": float(lap.var()),
+        "luma_mean": float(a.mean()),
+        "luma_std": float(a.std()),
+        "clipped_frac": clipped,
+    }
+
+
 def _write_jpeg(img: Image.Image, dest: Path, max_edge: int, quality: int) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     out = img.copy()
@@ -51,12 +94,16 @@ def _write_jpeg(img: Image.Image, dest: Path, max_edge: int, quality: int) -> No
 
 
 def process_photo(path: Path, file_id: int) -> dict:
-    """Thumbnail and the dimensions the gallery lays out from."""
+    """Thumbnail + oriented dimensions + all scores, from one decode."""
     img = _open_oriented(path)
     try:
         width, height = img.size
+        result = _scores(img)
+        result["dhash"] = dhash(img)
+        result["width"] = width
+        result["height"] = height
         _write_jpeg(img, thumb_path(file_id), THUMB_MAX, THUMB_QUALITY)
-        return {"width": width, "height": height}
+        return result
     finally:
         img.close()
 
@@ -119,8 +166,16 @@ def video_poster(path: Path, file_id: int, duration: float | None) -> dict:
         tmp.replace(dest)
     except Exception:
         tmp.unlink(missing_ok=True)
+        return {}
 
-    return {}
+    try:
+        with Image.open(dest) as img:
+            rgb = img.convert("RGB")
+            out = _scores(rgb)
+            out["dhash"] = dhash(rgb)
+            return out
+    except Exception:
+        return {}
 
 
 def video_codec(path: Path) -> str | None:
