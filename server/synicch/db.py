@@ -11,7 +11,7 @@ from typing import Any
 
 from . import config
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 _SCHEMA_SQL = Path(__file__).with_name("schema.sql")
 
 # Applied in order to bring an older database up to date. schema.sql always
@@ -22,6 +22,11 @@ _MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE files ADD COLUMN display_name TEXT",
         "ALTER TABLE files ADD COLUMN phone_trashed INTEGER NOT NULL DEFAULT 0",
         "CREATE INDEX IF NOT EXISTS idx_files_ptrash ON files(phone_trashed)",
+    ],
+    3: [
+        "ALTER TABLE files ADD COLUMN codec TEXT",
+        "ALTER TABLE files ADD COLUMN thumb_at TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_files_thumb ON files(thumb_at)",
     ],
 }
 

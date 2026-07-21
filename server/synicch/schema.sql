@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS files (
     width         INTEGER,    -- after EXIF rotation, so the gallery lays out right
     height        INTEGER,
     duration_s    REAL,                         -- video only
+    codec         TEXT,       -- h264 plays everywhere; hevc does not
+    thumb_at      TEXT,       -- when the grid tile was generated
 
     -- Timestamps. Cameras write local time with no zone,
     -- so the naive value and the resolved instant are stored separately and the
@@ -63,6 +65,7 @@ CREATE INDEX IF NOT EXISTS idx_files_state     ON files(state);
 CREATE INDEX IF NOT EXISTS idx_files_quick_fp  ON files(quick_fp);
 CREATE INDEX IF NOT EXISTS idx_files_kind      ON files(kind);
 CREATE INDEX IF NOT EXISTS idx_files_ptrash    ON files(phone_trashed);
+CREATE INDEX IF NOT EXISTS idx_files_thumb     ON files(thumb_at);
 
 -- ------------------------------------------------------- detection results --
 
