@@ -75,6 +75,36 @@ def _scan(args) -> int:
         if len(result["missing"]) > 10:
             print(f"    ... and {len(result['missing']) - 10} more")
 
+    if not args.no_media:
+        print()
+        _run_media(conn, args)
+
+    conn.close()
+    return 0
+
+
+def _run_media(conn, args) -> None:
+    from . import processor
+    r = processor.run(conn, workers=args.workers, force=getattr(args, "force", False),
+                      limit=getattr(args, "limit", None), verbose=not args.quiet,
+                      max_seconds=args.max_seconds)
+    if r["total"] == 0:
+        print("thumbnails up to date")
+        return
+    print(f"\n  decoded    {r['done']}/{r['total']}")
+    print(f"  errors     {r['errors']}")
+    print(f"  elapsed    {r['elapsed']:.1f}s"
+          f"  ({r['done'] / max(r['elapsed'], 0.001):.1f}/s)")
+    if r.get("stopped_early"):
+        print("  stopped at the time limit -- re-run to continue")
+    size, count = processor.cache_size()
+    print(f"  cache      {_fmt_bytes(size)} in {count} files")
+
+
+def cmd_media(args) -> int:
+    config.ensure_dirs()
+    conn = db.connect()
+    _run_media(conn, args)
     conn.close()
     return 0
 
@@ -171,11 +201,21 @@ def main(argv=None) -> int:
     s = sub.add_parser("scan", help="index the backup folder, then make thumbnails")
     s.add_argument("--refresh", action="store_true",
                    help="reprocess every file, even unchanged ones")
+    s.add_argument("--no-media", action="store_true",
+                   help="index only; skip the decode pass")
     s.add_argument("--workers", type=int, default=3)
     s.add_argument("--max-seconds", type=float, default=None,
                    help="stop the decode pass after this long (resumable)")
     s.add_argument("-q", "--quiet", action="store_true")
     s.set_defaults(fn=cmd_scan)
+
+    s = sub.add_parser("media", help="generate thumbnails and detection scores")
+    s.add_argument("--force", action="store_true", help="redo files already done")
+    s.add_argument("--workers", type=int, default=3)
+    s.add_argument("--limit", type=int, default=None)
+    s.add_argument("--max-seconds", type=float, default=None)
+    s.add_argument("-q", "--quiet", action="store_true")
+    s.set_defaults(fn=cmd_media)
 
     sub.add_parser("status", help="library summary").set_defaults(fn=cmd_status)
 
