@@ -27,6 +27,11 @@ PREVIEW_MAX = 1600     # lightbox
 THUMB_QUALITY = 78
 PREVIEW_QUALITY = 85
 
+# Every score is computed at this size. Shrinking an image destroys fine detail,
+# so a heavily-downscaled blurry photo scores as sharp -- scores are only
+# comparable if every image is measured at the same resolution.
+SCORE_SIZE = 1024
+
 
 def _shard(file_id: int) -> str:
     return f"{file_id % 256:02x}"
@@ -76,6 +81,7 @@ def hamming(a: str, b: str) -> int:
 def _scores(img: Image.Image) -> dict:
     """Sharpness, brightness and clipping, all from one grayscale array."""
     g = img.convert("L")
+    g.thumbnail((SCORE_SIZE, SCORE_SIZE), Image.BILINEAR)
     a = np.asarray(g, dtype=np.float32)
 
     if a.shape[0] < 3 or a.shape[1] < 3:
@@ -108,7 +114,7 @@ def _write_jpeg(img: Image.Image, dest: Path, max_edge: int, quality: int) -> No
 
 def process_photo(path: Path, file_id: int) -> dict:
     """Thumbnail + oriented dimensions + all scores, from one decode."""
-    img = _open_oriented(path, PREVIEW_MAX)
+    img = _open_oriented(path, SCORE_SIZE)
     try:
         width, height = img.size
         result = _scores(img)
