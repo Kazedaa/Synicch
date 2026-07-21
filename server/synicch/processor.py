@@ -28,13 +28,16 @@ def _task(args: tuple) -> tuple:
     """Runs in a worker process. Returns (file_id, results, error)."""
     file_id, path_str, kind, duration = args
     path = Path(path_str)
-    if kind == "photo":
-        return file_id, media.process_photo(path, file_id), None
-    if kind == "video":
-        result = media.video_poster(path, file_id, duration)
-        result["codec"] = media.video_codec(path)
-        return file_id, result, None
-    return file_id, {}, "unsupported kind"
+    try:
+        if kind == "photo":
+            return file_id, media.process_photo(path, file_id), None
+        if kind == "video":
+            result = media.video_poster(path, file_id, duration)
+            result["codec"] = media.video_codec(path)
+            return file_id, result, None
+        return file_id, {}, "unsupported kind"
+    except Exception as e:
+        return file_id, {}, f"{type(e).__name__}: {e}"
 
 
 def pending(conn, *, force: bool = False) -> list[tuple]:
@@ -64,7 +67,12 @@ def pending(conn, *, force: bool = False) -> list[tuple]:
 
 def _store(conn, file_id: int, result: dict, error: str | None) -> None:
     now = now_utc_iso()
-    sets, vals = ["thumb_at=?"], [now]
+    if error or not result:
+        conn.execute("UPDATE files SET scan_error=? WHERE id=?",
+                     (error or "no result", file_id))
+        return
+
+    sets, vals = ["thumb_at=?", "scan_error=NULL"], [now]
     if result.get("width"):
         sets += ["width=?", "height=?"]
         vals += [result["width"], result["height"]]
