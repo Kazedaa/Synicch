@@ -201,10 +201,14 @@ def status():
 @app.get("/api/media")
 @require_token
 def media_list():
-    """Newest first."""
+    """Newest first, cursor-paginated.
+
+    The cursor is (captured_utc, id) rather than an offset -- an offset would
+    silently skip or repeat items whenever a scan inserts rows mid-pagination.
+    """
     conn = get_db()
     limit = min(int(request.args.get("limit", PAGE_SIZE)), MAX_PAGE)
-    offset = int(request.args.get("offset", 0))
+    cursor = request.args.get("cursor")
     since = request.args.get("since")
     include_trashed = request.args.get("include_phone_trashed") == "1"
 
@@ -215,17 +219,28 @@ def media_list():
     if since:
         where.append("last_scanned > ?")
         params.append(since)
+    if cursor:
+        try:
+            c_utc, c_id = cursor.rsplit("|", 1)
+            where.append("(captured_utc < ? OR (captured_utc = ? AND id < ?))")
+            params += [c_utc, c_utc, int(c_id)]
+        except ValueError:
+            abort(400, "bad cursor")
+
     rows = conn.execute(
         f"SELECT * FROM files WHERE {' AND '.join(where)} "
-        f"ORDER BY captured_utc DESC, id DESC LIMIT ? OFFSET ?",
-        (*params, limit + 1, offset),
+        f"ORDER BY captured_utc DESC, id DESC LIMIT ?",
+        (*params, limit + 1),
     ).fetchall()
 
     has_more = len(rows) > limit
     rows = rows[:limit]
+    next_cursor = (f"{rows[-1]['captured_utc']}|{rows[-1]['id']}"
+                   if rows and has_more else None)
 
     return jsonify({
         "items": [_serialize(r) for r in rows],
+        "next_cursor": next_cursor,
         "has_more": has_more,
     })
 
