@@ -292,11 +292,13 @@ def media_preview(fid: int):
 @app.get("/api/media/<int:fid>/original")
 @require_token
 def media_original(fid: int):
+    """Range requests are handled by send_file, which video seeking needs."""
     row = _file_row(fid)
     path = _abs_path(row)
     if not path.exists():
         abort(410, "original no longer present")
-    resp = send_file(path, download_name=row["display_name"] or path.name)
+    resp = send_file(path, conditional=True,
+                     download_name=row["display_name"] or path.name)
     resp.headers["Cache-Control"] = IMMUTABLE
     return resp
 
