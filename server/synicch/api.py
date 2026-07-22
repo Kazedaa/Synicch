@@ -48,6 +48,8 @@ def require_token(fn):
     def wrapper(*a, **kw):
         header = request.headers.get("Authorization", "")
         token = header[7:] if header.startswith("Bearer ") else None
+        # Convenience for <img> tags, which cannot set headers.
+        token = token or request.args.get("token")
         if not auth.verify(get_db(), token):
             abort(401)
         return fn(*a, **kw)
