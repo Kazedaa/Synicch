@@ -99,6 +99,19 @@ CREATE TABLE IF NOT EXISTS edits (
     updated_at TEXT NOT NULL
 );
 
+-- ------------------------------------------------------------------- auth ---
+
+-- Only the hash is stored: a leaked database does not hand out access, and any
+-- single device can be revoked without disturbing the others.
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id         INTEGER PRIMARY KEY,
+    name       TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    last_used  TEXT,
+    revoked_at TEXT
+);
+
 -- ------------------------------------------------------------------ audit ---
 
 -- Append-only record of anything that touched bytes on disk. This is the paper
