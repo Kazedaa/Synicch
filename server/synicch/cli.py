@@ -192,6 +192,56 @@ def cmd_settings(args) -> int:
     return 0
 
 
+def cmd_pair(args) -> int:
+    """Print a QR code the app scans once. Beats typing a password on a phone."""
+    from . import auth
+    conn = db.connect()
+    if db.schema_version(conn) == 0:
+        db.init_db(conn)
+
+    token = auth.create(conn, args.name)
+    url = args.url or db.get_setting(conn, "public_url", "https://photos.ngserver")
+    fallbacks = [f for f in auth.local_addresses() if f != url]
+    payload = auth.pairing_payload(url, token, fallbacks)
+    conn.close()
+
+    try:
+        import qrcode
+        qr = qrcode.QRCode(border=1)
+        qr.add_data(payload)
+        qr.make(fit=True)
+        qr.print_ascii(invert=True)
+    except ImportError:
+        print("(install 'qrcode' for a scannable code)\n")
+
+    print(f"device   {args.name}")
+    print(f"url      {url}")
+    for f in fallbacks:
+        print(f"fallback {f}")
+    print(f"token    {token}")
+    print("\nScan the code in the app, or paste the url and token by hand.")
+    print("This token is shown once and cannot be recovered -- pair again if lost.")
+    return 0
+
+
+def cmd_tokens(args) -> int:
+    from . import auth
+    conn = db.connect()
+    if args.revoke:
+        n = auth.revoke(conn, args.revoke)
+        print(f"revoked {n} token(s) named {args.revoke!r}")
+    else:
+        rows = auth.listing(conn)
+        if not rows:
+            print("no tokens -- run 'synicch pair'")
+        for r in rows:
+            state = "revoked" if r["revoked_at"] else "active"
+            print(f"  {r['name']:16} {state:8} created {r['created_at']}"
+                  f"  last used {r['last_used'] or 'never'}")
+    conn.close()
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="synicch", description="Self-hosted photo library")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -223,6 +273,15 @@ def main(argv=None) -> int:
     s.add_argument("key", nargs="?")
     s.add_argument("value", nargs="?")
     s.set_defaults(fn=cmd_settings)
+
+    s = sub.add_parser("pair", help="print a QR code to pair a device")
+    s.add_argument("--name", default="phone")
+    s.add_argument("--url", default=None, help="override the public URL")
+    s.set_defaults(fn=cmd_pair)
+
+    s = sub.add_parser("tokens", help="list or revoke paired devices")
+    s.add_argument("--revoke", metavar="NAME")
+    s.set_defaults(fn=cmd_tokens)
 
     args = p.parse_args(argv)
     return args.fn(args)
