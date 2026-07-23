@@ -316,6 +316,18 @@ def media_original(fid: int):
     return resp
 
 
+@app.post("/api/scan")
+@require_token
+def trigger_scan():
+    """Detached, niced, and returns immediately."""
+    cmd = ["nice", "-n", "19", "ionice", "-c", "3",
+           sys.executable, "-m", "synicch.cli", "scan", "-q"]
+    env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parent.parent)}
+    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True, env=env)
+    return jsonify({"started": True})
+
+
 # ------------------------------------------------------------------- edits --
 
 @app.get("/api/media/<int:fid>/edit")
@@ -373,7 +385,9 @@ def _not_found(e):
 
 def serve(host: str = "127.0.0.1", port: int = 8400) -> None:
     from waitress import serve as waitress_serve
+    from . import scheduler
 
+    scheduler.start()
     print(f"synicch api on {host}:{port}", flush=True)
     # Threads, not processes: one user, and streaming a video holds a thread.
     waitress_serve(app, host=host, port=port, threads=8)

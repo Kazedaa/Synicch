@@ -204,6 +204,17 @@ def cmd_settings(args) -> int:
     return 0
 
 
+def cmd_serve(args) -> int:
+    from .api import serve
+    config.ensure_dirs()
+    conn = db.connect()
+    if db.schema_version(conn) == 0:
+        db.init_db(conn)
+    conn.close()
+    serve(host=args.host, port=args.port)
+    return 0
+
+
 def cmd_pair(args) -> int:
     """Print a QR code the app scans once. Beats typing a password on a phone."""
     from . import auth
@@ -285,6 +296,11 @@ def main(argv=None) -> int:
     s.add_argument("key", nargs="?")
     s.add_argument("value", nargs="?")
     s.set_defaults(fn=cmd_settings)
+
+    s = sub.add_parser("serve", help="run the API")
+    s.add_argument("--host", default="127.0.0.1")
+    s.add_argument("--port", type=int, default=8400)
+    s.set_defaults(fn=cmd_serve)
 
     s = sub.add_parser("pair", help="print a QR code to pair a device")
     s.add_argument("--name", default="phone")
