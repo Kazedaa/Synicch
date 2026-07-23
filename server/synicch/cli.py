@@ -45,8 +45,14 @@ def cmd_init(args) -> int:
 
 
 def cmd_scan(args) -> int:
+    from .lock import scan_lock
+
     config.ensure_dirs()
-    return _scan(args)
+    with scan_lock() as acquired:
+        if not acquired:
+            print("another scan is already running", file=sys.stderr)
+            return 2
+        return _scan(args)
 
 
 def _scan(args) -> int:
@@ -102,10 +108,16 @@ def _run_media(conn, args) -> None:
 
 
 def cmd_media(args) -> int:
+    from .lock import scan_lock
+
     config.ensure_dirs()
-    conn = db.connect()
-    _run_media(conn, args)
-    conn.close()
+    with scan_lock() as acquired:
+        if not acquired:
+            print("another scan is already running", file=sys.stderr)
+            return 2
+        conn = db.connect()
+        _run_media(conn, args)
+        conn.close()
     return 0
 
 

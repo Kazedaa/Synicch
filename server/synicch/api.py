@@ -118,6 +118,12 @@ def index():
     from . import __version__
     conn = get_db()
     scanning = False
+    try:
+        from .lock import scan_lock
+        with scan_lock() as free:
+            scanning = not free
+    except Exception:
+        pass
     tz = db.get_setting(conn, "display_timezone")
 
     return f"""<!doctype html>
@@ -176,8 +182,13 @@ def status():
         "SELECT * FROM scan_runs ORDER BY id DESC LIMIT 1").fetchone()
 
     import shutil
+    from .lock import scan_lock
     usage = shutil.disk_usage(config.HOME)
-    scanning = False
+
+    # Taking the lock non-blocking and immediately dropping it is the cheapest
+    # honest answer to "is a scan running right now".
+    with scan_lock() as free:
+        scanning = not free
 
     return jsonify({
         "files": total,
