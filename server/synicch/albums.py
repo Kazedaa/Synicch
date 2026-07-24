@@ -185,3 +185,85 @@ def apply_sessions(conn) -> int:
         added += cur.rowcount
     return added
 
+
+# ------------------------------------------------------------ library tree --
+
+def source_path(row) -> Path | None:
+    """Where this file's bytes actually are, or None if they are gone.
+
+    Syncthing's copy is the only one there is, so a photo deleted from the
+    phone takes its bytes with it. That is the hole the archive link closes
+    later.
+    """
+    src = config.CAMERA_BACKUP / row["rel_path"]
+    return src if src.exists() else None
+
+
+def build_tree(conn) -> dict:
+    """Regenerate library/ as hardlinks.
+
+    This tree is insurance, not the source of truth -- the database decides
+    membership. It exists so that if the app breaks, the database corrupts, or
+    this project is abandoned in three years, the albums are still ordinary
+    folders that any file manager can open. Hardlinks make it cost nothing.
+
+    Every folder under library/ is a *view* and is rebuilt from nothing every
+    time.
+    """
+    root = config.LIBRARY
+    root.mkdir(parents=True, exist_ok=True)
+
+    # Rebuild wholesale. Links are cheap and this converges after renames,
+    # deletions and membership changes without tracking what moved.
+    for child in root.iterdir():
+        if child.is_dir():
+            for f in child.rglob("*"):
+                if f.is_file():
+                    f.unlink()
+            for d in sorted((p for p in child.rglob("*") if p.is_dir()), reverse=True):
+                d.rmdir()
+            child.rmdir()
+
+    linked = skipped = 0
+    used: dict[str, int] = {}
+
+    def link_into(dirname: str, rows) -> None:
+        nonlocal linked, skipped
+        target = root / dirname
+        target.mkdir(parents=True, exist_ok=True)
+        for r in rows:
+            src = source_path(r)
+            if src is None:
+                skipped += 1
+                continue
+            name = r["display_name"] or Path(r["rel_path"]).name
+            dest = target / name
+            if dest.exists():
+                dest = target / f"{dest.stem}_{r['id']}{dest.suffix}"
+            try:
+                dest.hardlink_to(src)
+                linked += 1
+            except OSError:
+                skipped += 1
+
+    for album in conn.execute("SELECT id, name FROM albums").fetchall():
+        base = safe_dirname(album["name"])
+        used[base] = used.get(base, 0) + 1
+        dirname = base if used[base] == 1 else f"{base}_{album['id']}"
+        rows = conn.execute(
+            """SELECT f.id, f.rel_path, f.display_name FROM files f
+                 JOIN album_members m ON m.file_id = f.id
+                WHERE m.album_id = ? AND f.state = 'active'""",
+            (album["id"],)).fetchall()
+        link_into(dirname, rows)
+
+    link_into(config.UNSORTED_DIR, conn.execute(
+        """SELECT id, rel_path, display_name FROM files
+            WHERE state='active' AND phone_trashed=0
+              AND id NOT IN (SELECT file_id FROM album_members)""").fetchall())
+
+    link_into(config.TRASH_DIR, conn.execute(
+        "SELECT id, rel_path, display_name FROM files WHERE state='trashed'"
+    ).fetchall())
+
+    return {"linked": linked, "skipped": skipped}

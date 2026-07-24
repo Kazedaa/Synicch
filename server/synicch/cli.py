@@ -204,6 +204,17 @@ def cmd_settings(args) -> int:
     return 0
 
 
+def cmd_tree(args) -> int:
+    from . import albums
+    config.ensure_dirs()
+    conn = db.connect()
+    albums.apply_sessions(conn)
+    r = albums.build_tree(conn)
+    print(f"  {r['linked']} link(s), {r['skipped']} skipped")
+    conn.close()
+    return 0
+
+
 def cmd_serve(args) -> int:
     from .api import serve
     config.ensure_dirs()
@@ -296,6 +307,9 @@ def main(argv=None) -> int:
     s.add_argument("key", nargs="?")
     s.add_argument("value", nargs="?")
     s.set_defaults(fn=cmd_settings)
+
+    s = sub.add_parser("tree", help="rebuild the library folder tree")
+    s.set_defaults(fn=cmd_tree)
 
     s = sub.add_parser("serve", help="run the API")
     s.add_argument("--host", default="127.0.0.1")
