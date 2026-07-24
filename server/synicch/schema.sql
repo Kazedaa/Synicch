@@ -67,6 +67,44 @@ CREATE INDEX IF NOT EXISTS idx_files_kind      ON files(kind);
 CREATE INDEX IF NOT EXISTS idx_files_ptrash    ON files(phone_trashed);
 CREATE INDEX IF NOT EXISTS idx_files_thumb     ON files(thumb_at);
 
+-- ------------------------------------------------------------------ albums --
+
+CREATE TABLE IF NOT EXISTS albums (
+    id            INTEGER PRIMARY KEY,
+    name          TEXT    NOT NULL UNIQUE,
+    created_at    TEXT    NOT NULL,
+    cover_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
+    sort_order    INTEGER NOT NULL DEFAULT 0
+);
+
+-- Many-to-many on purpose: a photo can be in several albums, and because
+-- album folders are hardlinks this costs no extra disk space.
+CREATE TABLE IF NOT EXISTS album_members (
+    album_id  INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+    file_id   INTEGER NOT NULL REFERENCES files(id)  ON DELETE CASCADE,
+    added_at  TEXT    NOT NULL,
+    source    TEXT    NOT NULL,        -- session | manual
+    PRIMARY KEY (album_id, file_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_members_file ON album_members(file_id);
+
+-- The "record this trip" toggle. Membership is decided by comparing a photo's
+-- capture time against these windows, which is why the app does not need to be
+-- running during the trip.
+CREATE TABLE IF NOT EXISTS sessions (
+    id            INTEGER PRIMARY KEY,
+    album_id      INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+    started_local TEXT    NOT NULL,
+    started_utc   TEXT    NOT NULL,
+    ended_local   TEXT,
+    ended_utc     TEXT,
+    active        INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_active ON sessions(active);
+
 -- ------------------------------------------------------- detection results --
 
 -- algo_version lets a threshold change invalidate cleanly, and storing raw
