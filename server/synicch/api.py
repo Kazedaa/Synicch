@@ -73,8 +73,23 @@ def _abs_path(row) -> Path:
     return config.CAMERA_BACKUP / row["rel_path"]
 
 
-def _serialize(r) -> dict:
-    return {
+def _album_map(rows) -> dict[int, list[int]]:
+    """Album membership for a page of files, in one query rather than N."""
+    ids = [r["id"] for r in rows]
+    if not ids:
+        return {}
+    placeholders = ",".join("?" * len(ids))
+    out: dict[int, list[int]] = {}
+    for m in get_db().execute(
+            f"SELECT file_id, album_id FROM album_members WHERE file_id IN ({placeholders})",
+            ids):
+        out.setdefault(m["file_id"], []).append(m["album_id"])
+    return out
+
+
+def _serialize(r, albums: list[int] | None = None) -> dict:
+    base = {"albums": albums or []}
+    return base | {
         "id": r["id"],
         "name": r["display_name"] or Path(r["rel_path"]).name,
         "kind": r["kind"],
@@ -225,6 +240,9 @@ def media_list():
     since = request.args.get("since")
     include_trashed = request.args.get("include_phone_trashed") == "1"
 
+    album_id = request.args.get("album")
+    unsorted = request.args.get("unsorted") == "1"
+
     where = ["state = 'active'"]
     params: list = []
     if not include_trashed:
@@ -232,6 +250,13 @@ def media_list():
     if since:
         where.append("last_scanned > ?")
         params.append(since)
+    if album_id:
+        where.append("id IN (SELECT file_id FROM album_members WHERE album_id = ?)")
+        params.append(int(album_id))
+    if unsorted:
+        # Not a real album -- a query. It therefore cannot drift out of sync
+        # with reality the way a stored "unsorted" flag would.
+        where.append("id NOT IN (SELECT file_id FROM album_members)")
     if cursor:
         try:
             c_utc, c_id = cursor.rsplit("|", 1)
@@ -251,8 +276,9 @@ def media_list():
     next_cursor = (f"{rows[-1]['captured_utc']}|{rows[-1]['id']}"
                    if rows and has_more else None)
 
+    amap = _album_map(rows)
     return jsonify({
-        "items": [_serialize(r) for r in rows],
+        "items": [_serialize(r, amap.get(r["id"])) for r in rows],
         "next_cursor": next_cursor,
         "has_more": has_more,
     })
@@ -262,7 +288,7 @@ def media_list():
 @require_token
 def media_one(fid: int):
     row = _file_row(fid)
-    return jsonify(_serialize(row))
+    return jsonify(_serialize(row, _album_map([row]).get(fid)))
 
 
 @app.get("/api/media/<int:fid>/thumb")
@@ -326,6 +352,132 @@ def trigger_scan():
     subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True, env=env)
     return jsonify({"started": True})
+
+
+# ------------------------------------------------------------------ albums --
+
+@app.get("/api/albums")
+@require_token
+def albums_list():
+    from . import albums
+    return jsonify({"albums": albums.listing(get_db())})
+
+
+@app.post("/api/albums")
+@require_token
+def albums_create():
+    from . import albums
+    name = (request.json or {}).get("name", "").strip()
+    if not name:
+        abort(400, "name required")
+    conn = get_db()
+    try:
+        aid = albums.create(conn, name)
+    except Exception:
+        abort(409, "an album with that name already exists")
+    return jsonify({"id": aid, "name": name})
+
+
+@app.patch("/api/albums/<int:aid>")
+@require_token
+def albums_update(aid: int):
+    from . import albums
+    body = request.json or {}
+    conn = get_db()
+    if "name" in body:
+        albums.rename(conn, aid, body["name"].strip())
+    if "cover" in body:
+        conn.execute("UPDATE albums SET cover_file_id=? WHERE id=?", (body["cover"], aid))
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/albums/<int:aid>")
+@require_token
+def albums_delete(aid: int):
+    """Removes the album only. Photos are never touched."""
+    from . import albums
+    albums.delete(get_db(), aid)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/albums/<int:aid>/members")
+@require_token
+def albums_add(aid: int):
+    from . import albums
+    ids = (request.json or {}).get("ids", [])
+    return jsonify({"added": albums.add_members(get_db(), aid, ids)})
+
+
+@app.delete("/api/albums/<int:aid>/members")
+@require_token
+def albums_remove(aid: int):
+    from . import albums
+    ids = (request.json or {}).get("ids", [])
+    return jsonify({"removed": albums.remove_members(get_db(), aid, ids)})
+
+
+@app.get("/api/albums/<int:aid>/sessions")
+@require_token
+def sessions_list(aid: int):
+    from . import albums
+    return jsonify({"sessions": albums.sessions_for(get_db(), aid)})
+
+
+@app.post("/api/albums/<int:aid>/recording")
+@require_token
+def recording_toggle(aid: int):
+    """Start or stop the trip recorder.
+
+    Only one album records at a time. Membership is applied immediately so the
+    app sees the effect at once, even though the nightly scan would have caught
+    it anyway.
+    """
+    from . import albums
+    body = request.json or {}
+    conn = get_db()
+    if body.get("on"):
+        sid = albums.start_recording(conn, aid, body.get("start"))
+    else:
+        albums.stop_recording(conn, aid, body.get("end"))
+        sid = None
+    albums.apply_sessions(conn)
+    return jsonify({"session": sid, "recording": bool(body.get("on"))})
+
+
+@app.post("/api/albums/<int:aid>/sessions")
+@require_token
+def session_add(aid: int):
+    """The 'I forgot to turn it on' path -- add a window after the fact."""
+    from . import albums
+    body = request.json or {}
+    start, end = body.get("start"), body.get("end")
+    if not start or not end:
+        abort(400, "start and end required (local time, ISO)")
+    conn = get_db()
+    sid = albums.add_past_session(conn, aid, start, end)
+    added = albums.apply_sessions(conn)
+    return jsonify({"session": sid, "members": added})
+
+
+@app.patch("/api/sessions/<int:sid>")
+@require_token
+def session_edit(sid: int):
+    from . import albums
+    body = request.json or {}
+    conn = get_db()
+    albums.edit_session(conn, sid, body["start"], body.get("end"))
+    albums.apply_sessions(conn)
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/sessions/<int:sid>")
+@require_token
+def session_delete(sid: int):
+    from . import albums
+    conn = get_db()
+    conn.execute("DELETE FROM sessions WHERE id=?", (sid,))
+    albums.apply_sessions(conn)
+    return jsonify({"ok": True})
 
 
 # ------------------------------------------------------------------- edits --
