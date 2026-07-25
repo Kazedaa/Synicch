@@ -122,6 +122,31 @@ CREATE TABLE IF NOT EXISTS scores (
     computed_at   TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS flags (
+    id           INTEGER PRIMARY KEY,
+    file_id      INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    reason       TEXT    NOT NULL,   -- short_video | blank | blurry | dup_exact | ...
+    severity     REAL,
+    created_at   TEXT    NOT NULL,
+    dismissed_at TEXT,
+    UNIQUE (file_id, reason)
+);
+
+CREATE INDEX IF NOT EXISTS idx_flags_reason ON flags(reason, dismissed_at);
+
+CREATE TABLE IF NOT EXISTS dup_groups (
+    id            INTEGER PRIMARY KEY,
+    kind          TEXT    NOT NULL,   -- exact | near
+    keeper_file_id INTEGER REFERENCES files(id) ON DELETE SET NULL,
+    created_at    TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS dup_members (
+    group_id INTEGER NOT NULL REFERENCES dup_groups(id) ON DELETE CASCADE,
+    file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    PRIMARY KEY (group_id, file_id)
+);
+
 -- ------------------------------------------------------------------ edits ---
 
 -- Crop and rotation are stored as numbers and applied at render time. The

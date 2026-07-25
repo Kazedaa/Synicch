@@ -204,6 +204,16 @@ def cmd_settings(args) -> int:
     return 0
 
 
+def cmd_detect(args) -> int:
+    from . import detect
+    conn = db.connect()
+    counts = detect.run(conn)
+    for reason, n in counts.items():
+        print(f"  {reason:14} {n}")
+    conn.close()
+    return 0
+
+
 def cmd_tree(args) -> int:
     from . import albums
     config.ensure_dirs()
@@ -307,6 +317,9 @@ def main(argv=None) -> int:
     s.add_argument("key", nargs="?")
     s.add_argument("value", nargs="?")
     s.set_defaults(fn=cmd_settings)
+
+    s = sub.add_parser("detect", help="recompute cleanup suggestions from stored scores")
+    s.set_defaults(fn=cmd_detect)
 
     s = sub.add_parser("tree", help="rebuild the library folder tree")
     s.set_defaults(fn=cmd_tree)
