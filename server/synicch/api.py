@@ -562,6 +562,30 @@ def trash_purge():
         force=bool(body.get("force")), dry_run=bool(body.get("dry_run"))))
 
 
+# ------------------------------------------------------------ free up space --
+
+@app.post("/api/freeup/candidates")
+@require_token
+def freeup_candidates():
+    """Phase one: which local files are even eligible?
+
+    Returns the subset worth hashing so the phone does not burn battery hashing
+    its entire camera roll.
+    """
+    from . import freeup
+    files = (request.json or {}).get("files", [])
+    return jsonify(freeup.candidates(get_db(), files))
+
+
+@app.post("/api/freeup/verify")
+@require_token
+def freeup_verify():
+    """Phase two: confirm byte-identical content before the phone deletes anything."""
+    from . import freeup
+    items = (request.json or {}).get("files", [])
+    return jsonify(freeup.verify(get_db(), items))
+
+
 # ------------------------------------------------------------------- edits --
 
 @app.get("/api/media/<int:fid>/edit")

@@ -7,10 +7,11 @@ Verification is by *content*. A matching filename and size is not evidence; that
 is exactly how you end up deleting the one photo that did not copy properly.
 This is the one place a full hash on both sides is worth computing.
 
-Three conditions, all required:
+Four conditions, all required:
   1. the server holds byte-identical content
   2. Synicch has indexed it into the library, not merely received it
   3. Syncthing reports the folder fully in sync
+  4. it is older than a cooling-off period
 """
 from __future__ import annotations
 
@@ -69,6 +70,8 @@ def candidates(conn, local_files: list[dict]) -> dict:
     battery hashing its entire camera roll.
     """
     ready, why = syncthing_ready()
+    cooling = int(db.get_setting(conn, "freeup_cooling_off_days"))
+    cutoff = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=cooling)).isoformat()
 
     if not ready:
         return {"ready": False, "reason": why, "candidates": []}
@@ -88,6 +91,9 @@ def candidates(conn, local_files: list[dict]) -> dict:
         # Condition 2: received is not the same as indexed. A photo sitting in
         # the backup folder unscanned is held by one thread only.
         if row["thumb_at"] is None:
+            continue
+        # Condition 4: nothing recent, ever.
+        if (row["captured_utc"] or "") > cutoff:
             continue
         # Ambiguous states do not belong in a bulk delete.
         flagged = conn.execute(
