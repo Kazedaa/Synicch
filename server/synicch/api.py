@@ -480,6 +480,88 @@ def session_delete(sid: int):
     return jsonify({"ok": True})
 
 
+# ----------------------------------------------------------------- cleanup --
+
+@app.get("/api/cleanup/groups")
+@require_token
+def cleanup_groups():
+    from . import detect
+    return jsonify({"groups": detect.groups(get_db())})
+
+
+@app.get("/api/cleanup/<reason>")
+@require_token
+def cleanup_items(reason: str):
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT f.*, fl.severity FROM flags fl JOIN files f ON f.id = fl.file_id
+            WHERE fl.reason = ? AND fl.dismissed_at IS NULL AND f.state = 'active'
+            ORDER BY fl.severity ASC, f.captured_utc DESC LIMIT 500""",
+        (reason,)).fetchall()
+
+    # For duplicate groups the app needs to know which one is pre-identified as
+    # the keeper, so it can show it differently.
+    keepers = {r["keeper_file_id"] for r in conn.execute(
+        "SELECT keeper_file_id FROM dup_groups")}
+
+    items = []
+    for r in rows:
+        d = _serialize(r)
+        d["severity"] = r["severity"]
+        d["keeper"] = r["id"] in keepers
+        items.append(d)
+    return jsonify({"reason": reason, "items": items})
+
+
+@app.post("/api/cleanup/dismiss")
+@require_token
+def cleanup_dismiss():
+    """'Keep this, stop suggesting it.' Dismissals survive re-detection."""
+    ids = (request.json or {}).get("ids", [])
+    reason = (request.json or {}).get("reason")
+    conn = get_db()
+    n = 0
+    for fid in ids:
+        cur = conn.execute(
+            "UPDATE flags SET dismissed_at=? WHERE file_id=? "
+            + ("AND reason=?" if reason else ""),
+            (now_utc_iso(), fid, reason) if reason else (now_utc_iso(), fid))
+        n += cur.rowcount
+    return jsonify({"dismissed": n})
+
+
+@app.post("/api/cleanup/detect")
+@require_token
+def cleanup_detect():
+    from . import detect
+    return jsonify({"flagged": detect.run(get_db())})
+
+
+# ------------------------------------------------------------------- trash --
+
+@app.get("/api/trash")
+@require_token
+def trash_list():
+    from . import trash
+    return jsonify({"items": trash.listing(get_db())})
+
+
+@app.post("/api/trash/purge")
+@require_token
+def trash_purge():
+    """Permanently delete. The only endpoint that can destroy data.
+
+    Without `force` this only touches items already past the retention period,
+    which is what the nightly run uses. `force` is the app's explicit
+    "delete permanently now" button.
+    """
+    from . import trash
+    body = request.json or {}
+    return jsonify(trash.purge(
+        get_db(), file_ids=body.get("ids"),
+        force=bool(body.get("force")), dry_run=bool(body.get("dry_run"))))
+
+
 # ------------------------------------------------------------------- edits --
 
 @app.get("/api/media/<int:fid>/edit")
