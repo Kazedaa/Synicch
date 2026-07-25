@@ -44,6 +44,11 @@ def run(conn) -> dict:
     short_video_max = float(db.get_setting(conn, "short_video_max_s"))
     counts: dict[str, int] = {}
 
+    # Anything previously flagged but no longer matching is cleared, so that
+    # lowering a threshold does not leave stale suggestions behind. Dismissed
+    # flags survive -- the user already said no and should not be asked again.
+    conn.execute("DELETE FROM flags WHERE dismissed_at IS NULL")
+
     # -- deleted on the phone, still inside Android's grace period ------------
     counts["phone_trashed"] = sum(
         _flag(conn, r["id"], "phone_trashed")
