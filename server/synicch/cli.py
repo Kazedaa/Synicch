@@ -85,8 +85,44 @@ def _scan(args) -> int:
         print()
         _run_media(conn, args)
 
+    if not args.no_post:
+        _post_scan(conn)
+
     conn.close()
     return 0
+
+
+def _post_scan(conn) -> None:
+    """Everything that follows from new files existing.
+
+    Ordering matters: sessions decide album membership, detection needs the
+    scores the media pass just produced, and the folder tree is a projection of
+    both so it goes last.
+    """
+    from . import albums, detect, trash
+
+    print("\napplying recording sessions")
+    members = albums.apply_sessions(conn)
+    print(f"  {members} session membership(s)")
+
+    print("running detection")
+    counts = detect.run(conn)
+    for reason, n in counts.items():
+        if n:
+            print(f"  {reason:14} {n}")
+
+    print("purging expired trash")
+    result = trash.purge(conn)
+    if result["purged"] or result["blocked"]:
+        print(f"  purged {result['purged']}, freed {_fmt_bytes(result['freed'])}")
+    if result["blocked"]:
+        print(f"  ** {result['blocked']} blocked -- see reports/purge-blocked.txt")
+    if result.get("stignore_warn"):
+        print("  ** Syncthing ignore list is getting long; scans will slow down")
+
+    print("rebuilding library tree")
+    tree = albums.build_tree(conn)
+    print(f"  {tree['linked']} link(s), {tree['skipped']} skipped")
 
 
 def _run_media(conn, args) -> None:
@@ -225,6 +261,21 @@ def cmd_tree(args) -> int:
     return 0
 
 
+def cmd_purge(args) -> int:
+    from . import trash
+    conn = db.connect()
+    r = trash.purge(conn, force=args.force, dry_run=args.dry_run)
+    print(f"  eligible {r['eligible']}   blocked {r['blocked']}")
+    print(f"  purged   {r['purged']}   freed {_fmt_bytes(r['freed'])}")
+    if r["blocked_paths"]:
+        print("\n  blocked (unsafe to express as a Syncthing ignore rule):")
+        for p in r["blocked_paths"]:
+            print(f"    {p}")
+        print("  see reports/purge-blocked.txt")
+    conn.close()
+    return 0
+
+
 def cmd_serve(args) -> int:
     from .api import serve
     config.ensure_dirs()
@@ -297,6 +348,8 @@ def main(argv=None) -> int:
                    help="reprocess every file, even unchanged ones")
     s.add_argument("--no-media", action="store_true",
                    help="index only; skip the decode pass")
+    s.add_argument("--no-post", action="store_true",
+                   help="skip sessions, detection, trash purge and tree rebuild")
     s.add_argument("--workers", type=int, default=3)
     s.add_argument("--max-seconds", type=float, default=None,
                    help="stop the decode pass after this long (resumable)")
@@ -323,6 +376,12 @@ def main(argv=None) -> int:
 
     s = sub.add_parser("tree", help="rebuild the library folder tree")
     s.set_defaults(fn=cmd_tree)
+
+    s = sub.add_parser("purge", help="permanently delete expired trash")
+    s.add_argument("--dry-run", action="store_true")
+    s.add_argument("--force", action="store_true",
+                   help="ignore the retention period")
+    s.set_defaults(fn=cmd_purge)
 
     s = sub.add_parser("serve", help="run the API")
     s.add_argument("--host", default="127.0.0.1")
