@@ -107,3 +107,12 @@ def set_setting(conn: sqlite3.Connection, key: str, value: Any) -> None:
         (key, str(value)),
     )
 
+
+def audit(conn: sqlite3.Connection, action: str, *, file_id: int | None = None,
+          rel_path: str | None = None, detail: str | None = None) -> None:
+    """Append-only trail for anything that touches bytes on disk."""
+    from .timestamps import now_utc_iso
+    conn.execute(
+        "INSERT INTO audit(at, action, file_id, rel_path, detail) VALUES(?,?,?,?,?)",
+        (now_utc_iso(), action, file_id, rel_path, detail),
+    )
