@@ -10,7 +10,7 @@ deliberate purge removes bytes.
 """
 from __future__ import annotations
 
-from . import db
+from . import db, media
 from .timestamps import now_utc_iso
 
 # Ordered by how much the user should trust them. The app shows them in this
@@ -20,8 +20,15 @@ REASONS = [
     ("short_video", "Accidental videos"),
     ("blank", "Blank or black"),
     ("dup_exact", "Exact duplicates"),
+    ("dup_near", "Near duplicates"),
     ("blurry", "Blurry"),
 ]
+
+# Near-duplicate comparison is restricted to photos taken close together in
+# time. Comparing everything against everything is O(n^2) and would crawl on a
+# large library -- and two photos taken months apart are not a burst.
+NEAR_DUP_WINDOW_S = 150
+NEAR_DUP_MAX_DISTANCE = 6
 
 
 def _flag(conn, file_id: int, reason: str, severity: float | None = None) -> int:
@@ -70,6 +77,7 @@ def run(conn) -> dict:
             (blur_threshold,)))
 
     counts["dup_exact"] = _exact_duplicates(conn)
+    counts["dup_near"] = _near_duplicates(conn)
     return counts
 
 
@@ -100,6 +108,61 @@ def _exact_duplicates(conn) -> int:
                 flagged += _flag(conn, fid, "dup_exact")
     return flagged
 
+
+def _near_duplicates(conn) -> int:
+    """Bursts of near-identical shots, with the sharpest pre-identified.
+
+    In practice this reclaims more space and removes more clutter than blur
+    detection ever will -- nine shots of the same sunset are far more common
+    than genuinely unusable photos.
+    """
+    conn.execute("DELETE FROM dup_groups WHERE kind='near'")
+    rows = conn.execute(
+        """SELECT f.id, f.captured_utc, s.dhash, s.laplacian_var
+             FROM files f JOIN scores s ON s.file_id = f.id
+            WHERE f.state='active' AND s.dhash IS NOT NULL
+              AND f.captured_utc IS NOT NULL
+            ORDER BY f.captured_utc""").fetchall()
+
+    import datetime as dt
+
+    def when(v: str) -> float:
+        return dt.datetime.fromisoformat(v).timestamp()
+
+    flagged = 0
+    grouped: set[int] = set()
+    i = 0
+    while i < len(rows):
+        base = rows[i]
+        if base["id"] in grouped:
+            i += 1
+            continue
+        cluster = [base]
+        t0 = when(base["captured_utc"])
+        j = i + 1
+        # Only walk forward while inside the time window: the list is sorted,
+        # so this stays linear rather than quadratic.
+        while j < len(rows) and when(rows[j]["captured_utc"]) - t0 <= NEAR_DUP_WINDOW_S:
+            cand = rows[j]
+            if cand["id"] not in grouped and \
+                    media.hamming(base["dhash"], cand["dhash"]) <= NEAR_DUP_MAX_DISTANCE:
+                cluster.append(cand)
+            j += 1
+
+        if len(cluster) > 1:
+            keeper = max(cluster, key=lambda r: r["laplacian_var"] or 0)
+            cur = conn.execute(
+                "INSERT INTO dup_groups(kind, keeper_file_id, created_at) "
+                "VALUES('near',?,?)", (keeper["id"], now_utc_iso()))
+            gid = cur.lastrowid
+            for r in cluster:
+                grouped.add(r["id"])
+                conn.execute(
+                    "INSERT INTO dup_members(group_id, file_id) VALUES(?,?)", (gid, r["id"]))
+                if r["id"] != keeper["id"]:
+                    flagged += _flag(conn, r["id"], "dup_near")
+        i += 1
+    return flagged
 
 
 def groups(conn) -> list[dict]:
