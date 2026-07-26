@@ -1,0 +1,198 @@
+package com.synicch.data
+
+import android.content.ContentValues
+import android.content.Context
+import android.content.IntentSender
+import android.net.Uri
+import android.provider.MediaStore
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private val Context.prefs by preferencesDataStore("synicch")
+private val KEY_URL = stringPreferencesKey("url")
+private val KEY_TOKEN = stringPreferencesKey("token")
+private val KEY_FALLBACKS = stringPreferencesKey("fallbacks")
+
+/**
+ * Single source of truth for the UI.
+ *
+ * Reads always come from the local cache first so the gallery renders instantly
+ * and works with the network down; a refresh then updates in the background.
+ */
+class Repo(private val context: Context) {
+
+    val api = Api(context)
+    val cache = Cache(context)
+    val local = LocalMedia(context)
+
+    private var serverItems: List<MediaItem> = emptyList()
+
+    private val _items = MutableStateFlow<List<MediaItem>>(emptyList())
+    val items: StateFlow<List<MediaItem>> = _items
+
+    private fun remerge() {
+        _items.value = serverItems
+            .sortedByDescending { it.capturedUtc ?: it.captured ?: "" }
+    }
+
+    private val _albums = MutableStateFlow<List<Album>>(emptyList())
+    val albums: StateFlow<List<Album>> = _albums
+
+    private val _localUris = MutableStateFlow<Map<Long, Uri>>(emptyMap())
+    val localUris: StateFlow<Map<Long, Uri>> = _localUris
+
+    private val _notBackedUp = MutableStateFlow<List<LocalMedia.Local>>(emptyList())
+    val notBackedUp: StateFlow<List<LocalMedia.Local>> = _notBackedUp
+
+    private val _syncing = MutableStateFlow(false)
+    val syncing: StateFlow<Boolean> = _syncing
+
+    private val _online = MutableStateFlow(false)
+    val online: StateFlow<Boolean> = _online
+
+    val paired: Boolean get() = api.configured
+
+    suspend fun loadCredentials() = withContext(Dispatchers.IO) {
+        val p = context.prefs.data.first()
+        val primary = p[KEY_URL] ?: ""
+        val extra = p[KEY_FALLBACKS]?.split("|")?.filter { it.isNotBlank() } ?: emptyList()
+        api.addresses = (listOf(primary) + extra).filter { it.isNotBlank() }
+        api.token = p[KEY_TOKEN] ?: ""
+    }
+
+    suspend fun savePairing(url: String, token: String,
+                            fallbacks: List<String> = emptyList()) =
+        withContext(Dispatchers.IO) {
+            context.prefs.edit {
+                it[KEY_URL] = url
+                it[KEY_TOKEN] = token
+                it[KEY_FALLBACKS] = fallbacks.joinToString("|")
+            }
+            api.addresses = (listOf(url) + fallbacks).filter { it.isNotBlank() }
+            api.token = token
+        }
+
+    suspend fun unpair() = withContext(Dispatchers.IO) {
+        context.prefs.edit {
+            it.remove(KEY_URL); it.remove(KEY_TOKEN); it.remove(KEY_FALLBACKS)
+        }
+        api.addresses = emptyList(); api.token = ""
+        cache.clear()
+        serverItems = emptyList()
+        phoneOnlyItems = emptyList()
+        remerge()
+    }
+
+    /** Load from cache. Instant, works offline, no network touched. */
+    suspend fun loadCached() = withContext(Dispatchers.IO) {
+        serverItems = cache.media()
+        remerge()
+        _albums.value = cache.albums()
+    }
+
+    /** Read the phone's own camera roll and match it against the library. */
+    suspend fun refreshLocal() = withContext(Dispatchers.IO) {
+        runCatching {
+            local.scan()
+            _notBackedUp.value = local.notBackedUp(serverItems)
+            _localUris.value = local.matchAll(serverItems)
+        }
+    }
+
+    /**
+     * Pull the full library metadata.
+     *
+     * Paged rather than all at once so the first screenful appears quickly, and
+     * so a dropped connection halfway through still leaves the cache better off
+     * than it was.
+     */
+    suspend fun sync(onProgress: (Int) -> Unit = {}) = withContext(Dispatchers.IO) {
+        if (!api.configured) return@withContext
+        _syncing.value = true
+        try {
+            val seen = HashSet<Long>()
+            var cursor: String? = null
+            var total = 0
+            while (true) {
+                val page = api.media(cursor = cursor, limit = 500).getOrElse {
+                    _online.value = false
+                    return@withContext
+                }
+                _online.value = true
+                cache.putMedia(page.items)
+                page.items.forEach { seen.add(it.id) }
+                total += page.items.size
+                onProgress(total)
+                serverItems = cache.media()
+                remerge()
+                cursor = page.nextCursor
+                if (!page.hasMore || cursor == null) break
+            }
+            // Anything the server no longer lists has been purged; drop it
+            // rather than leaving a tile that 404s.
+            cache.removeMissing(seen)
+            serverItems = cache.media()
+            remerge()
+            api.albums().onSuccess { cache.putAlbums(it.albums); _albums.value = it.albums }
+            cache.setMeta("last_sync", System.currentTimeMillis().toString())
+            refreshLocal()
+        } finally {
+            _syncing.value = false
+        }
+    }
+
+    /**
+     * Adopt the address list the server advertises.
+     *
+     * However the device was paired - QR or typed by hand - it ends up knowing
+     * every way to reach the server, and keeps up if one changes.
+     */
+    suspend fun learnAddresses(advertised: List<String>) = withContext(Dispatchers.IO) {
+        if (advertised.isEmpty()) return@withContext
+        val merged = (advertised + api.addresses).distinct().filter { it.isNotBlank() }
+        if (merged != api.addresses) {
+            api.addresses = merged
+            context.prefs.edit {
+                it[KEY_URL] = merged.first()
+                it[KEY_FALLBACKS] = merged.drop(1).joinToString("|")
+            }
+        }
+    }
+
+    suspend fun refreshAlbums() = withContext(Dispatchers.IO) {
+        api.albums().onSuccess { cache.putAlbums(it.albums); _albums.value = it.albums }
+    }
+
+    fun lastSync(): Long = cache.meta("last_sync")?.toLongOrNull() ?: 0
+
+    /**
+     * Where to load a photo's pixels from.
+     *
+     * Local storage when the phone still has the file - instant and no network.
+     * Otherwise the server. This is the payoff for being a native app.
+     */
+    fun sourceFor(item: MediaItem, full: Boolean): Any =
+        _localUris.value[item.id] ?: if (full) api.previewUrl(item.id) else api.thumbUrl(item.id)
+
+    /**
+     * Full-resolution pixels.
+     *
+     * Video playback always wants these; a photo only once it has been zoomed
+     * past the point where the 1600px preview has any detail left to show.
+     */
+    fun originalFor(item: MediaItem): Any =
+        _localUris.value[item.id] ?: api.originalUrl(item.id)
+
+    fun playbackUrl(item: MediaItem): Any = originalFor(item)
+
+    fun deleteRequest(uris: List<Uri>): IntentSender? = runCatching {
+        MediaStore.createDeleteRequest(context.contentResolver, uris).intentSender
+    }.getOrNull()
+}
