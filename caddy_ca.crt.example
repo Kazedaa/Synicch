@@ -1,0 +1,23 @@
+This is a placeholder, and it deliberately does not live in res/raw: Android's
+resource merger rejects any filename with more than one dot in it, so an
+".example" sitting in there fails the build before it starts.
+
+Copy your own Caddy root certificate to
+
+    app/app/src/main/res/raw/caddy_ca.crt
+
+before building. The real file is gitignored so nobody ends up shipping theirs,
+which is why res/raw looks empty in a fresh clone.
+
+On the server, Caddy keeps its root at:
+
+    /var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt
+
+So, from the repo root:
+
+    scp root@<your-server>:/var/lib/caddy/.local/share/caddy/pki/authorities/local/root.crt \
+        app/app/src/main/res/raw/caddy_ca.crt
+
+The app trusts this certificate and nothing else -- not the public CA roots.
+That is deliberate: it means the app talks to your server or it talks to
+nobody. If Caddy ever regenerates its CA, re-copy the file and rebuild.

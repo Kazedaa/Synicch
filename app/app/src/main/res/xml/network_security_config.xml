@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+        Android apps do not trust user-installed certificates, so installing
+        Caddy's CA on the phone fixes the browser but not this app. It is
+        bundled here instead.
+
+        This is a base-config rather than a per-domain rule on purpose. The app
+        must be able to reach the server by raw IP as well as by hostname,
+        because a home network that hands out a public DNS server alongside
+        Pi-hole will authoritatively deny .ngserver names about half the time.
+        Pinning the CA to the hostname alone would mean the IP fallback fails
+        its TLS handshake - precisely when it is needed most. LAN addresses can
+        also change with DHCP, so enumerating them here would rot.
+
+        The system certificates stay trusted, so ordinary HTTPS is unaffected.
+        The only extra trust granted is to a CA whose private key lives on the
+        user's own server.
+    -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/caddy_ca" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
