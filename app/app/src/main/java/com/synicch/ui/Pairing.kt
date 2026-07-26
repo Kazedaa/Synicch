@@ -32,12 +32,17 @@ fun PairingScreen(
     var url by remember { mutableStateOf("https://photos.ngserver") }
     var token by remember { mutableStateOf("") }
 
-    Column(
+    // Centring inside a scrollable column pushed the first child off the top of
+    // the viewport, which silently swallowed the title. A Box that centres a
+    // wrap-height column is predictable at any content size.
+    Box(
         Modifier.fillMaxSize().systemBarsPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(28.dp),
+            .verticalScroll(rememberScrollState()),
+        contentAlignment = Alignment.Center,
+    ) {
+    Column(
+        Modifier.fillMaxWidth().padding(28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
     ) {
         Text("Synicch", style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
@@ -108,5 +113,6 @@ fun PairingScreen(
             Text(it, color = MaterialTheme.colorScheme.error,
                 style = MaterialTheme.typography.bodyMedium)
         }
+    }
     }
 }
