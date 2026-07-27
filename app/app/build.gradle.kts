@@ -30,6 +30,7 @@ android {
     kotlin {
         compilerOptions {
             freeCompilerArgs.addAll(
+                "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
                 "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
             )
         }
@@ -63,6 +64,7 @@ dependencies {
 
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui.compose)
+    implementation(libs.media3.ui)
 
     implementation(platform("io.coil-kt.coil3:coil-bom:3.5.0"))
     implementation(libs.coil.compose)
