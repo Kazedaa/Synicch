@@ -274,7 +274,18 @@ private fun ViewerAction(icon: androidx.compose.ui.graphics.vector.ImageVector,
 /**
  * One photo, zoomable.
  *
- * Fit to the screen, with a pinch to scale it about the middle.
+ * Three things make this feel like a real photo viewer rather than an image in
+ * a box:
+ *
+ * - **Zoom happens around the fingers**, not around the middle of the screen,
+ *   so the detail being pinched at stays under the hand.
+ * - **Panning stops at the edges of the photo.** The visible size is worked out
+ *   from the stored aspect ratio, so a zoomed photo cannot be dragged off into
+ *   empty space and lost.
+ * - **Sharpness follows the zoom.** The 1600px preview is plenty at fit size and
+ *   visibly soft at 3x, so the original is layered on top once magnified past
+ *   the point where the preview runs out of detail.
+ *
  */
 @Composable
 private fun ZoomableImage(
@@ -363,13 +374,55 @@ private fun ZoomableImage(
                 )
             }
             .pointerInput(Unit) {
-                detectTransformGestures { _, pan, gestureZoom, _ ->
-                    scale = (scale * gestureZoom).coerceIn(1f, MAX_SCALE)
-                    offset = if (scale > 1f) offset + pan else Offset.Zero
-                    onZoomChanged(scale > 1f)
-                }
-            }
-            .graphicsLayer {
+                detectTransforms(
+                    onGesture = { centroid, pan, gestureZoom ->
+                        if (animateTo != null) return@detectTransforms false
+
+                        val focus = centroid - Offset(boxW / 2f, boxH / 2f)
+                        val next = (scale * gestureZoom).coerceIn(1f, MAX_SCALE)
+                        if (next != scale) {
+                            offset = focused(focus, next)
+                            scale = next
+                            if (next > HI_RES_SCALE) wantHiRes = true
+                        }
+
+                        if (scale > 1f) {
+                            offset = clamp(offset + pan, scale)
+                            closing = Offset.Zero
+                        } else {
+                            offset = Offset.Zero
+                            closing += pan
+                        }
+
+                        onZoomChanged(scale > 1f)
+                        true
+                    },
+                    onEnd = {
+                        if (scale <= 1f) {
+                            when {
+                                closing.y > dismissAt -> onDismiss()
+                                closing.y < -dismissAt -> { onDetails(); springBack++ }
+                                else -> springBack++
+                            }
+                        } else {
+                            offset = clamp(offset, scale)
+                        }
+                    },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        // Only a downward drag is a dismissal, so only that one shrinks and
+        // fades. Upward is a peek at the details and drags against resistance.
+        val progress =
+            if (boxH > 0f && closing.y > 0f) (closing.y / (boxH * 0.6f)).coerceIn(0f, 1f)
+            else 0f
+        val travel = if (closing.y < 0f) closing.y * 0.45f else closing.y
+
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer {
                     // Shrinking and fading as it is dragged away is what makes
                     // the gesture readable before you have committed to it.
                     val shrink = 1f - 0.25f * progress
@@ -409,6 +462,70 @@ private fun ZoomableImage(
         }
     }
 }
+
+/**
+ * Pinch and drag, with an end-of-gesture callback.
+ *
+ * Compose's own `detectTransformGestures` has no way to say "the fingers came
+ * off", which is exactly when a viewer has to decide whether a downward drag
+ * was a dismissal or something to spring back from. Slop handling matches the
+ * original so that taps still reach the tap detector alongside it.
+ *
+ * [onGesture] returns whether it wants the movement. Anything it declines is
+ * left unconsumed and reaches the pager behind, which is how a sideways swipe
+ * still turns the page.
+ */
+private suspend fun PointerInputScope.detectTransforms(
+    onGesture: (centroid: Offset, pan: Offset, zoom: Float) -> Boolean,
+    onEnd: () -> Unit,
+) {
+    awaitEachGesture {
+        var zoom = 1f
+        var pan = Offset.Zero
+        var pastSlop = false
+        val slop = viewConfiguration.touchSlop
+
+        awaitFirstDown(requireUnconsumed = false)
+        do {
+            val event = awaitPointerEvent()
+            val canceled = event.changes.any { it.isConsumed }
+            if (!canceled) {
+                val zoomChange = event.calculateZoom()
+                val panChange = event.calculatePan()
+
+                if (!pastSlop) {
+                    zoom *= zoomChange
+                    pan += panChange
+                    val size = event.calculateCentroidSize(useCurrent = false)
+                    if (abs(1 - zoom) * size > slop || pan.getDistance() > slop) {
+                        pastSlop = true
+                    }
+                }
+
+                if (pastSlop) {
+                    val centroid = event.calculateCentroid(useCurrent = false)
+                    val claimed = zoomChange != 1f || panChange != Offset.Zero
+                    if (claimed && onGesture(centroid, panChange, zoomChange)) {
+                        event.changes.forEach { if (it.positionChanged()) it.consume() }
+                    }
+                }
+            }
+        } while (!canceled && event.changes.any { it.pressed })
+
+        onEnd()
+    }
+}
+
+/**
+ * A video page.
+ *
+ * The vertical gestures have to be read *before* the player view underneath,
+ * which swallows touches for its own controls - otherwise swiping up on a
+ * video would do nothing while the same swipe on a photo opened its details.
+ * Only clearly vertical movement is taken, so scrubbing, the pager and every
+ * tap on the transport controls are left alone.
+ */
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 private fun VideoPage(
     model: Any,
