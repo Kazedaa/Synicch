@@ -13,16 +13,20 @@ import com.synicch.data.MediaItem
 object Grid {
 
     /**
-     * How tall a row of photos should aim to be.
+     * How tall a row of photos should aim to be, **in dp**.
+     *
+     * Density units, not pixels: the same number has to mean the same physical
+     * size on every screen. Feeding raw pixels into the layout is what made the
+     * grid come out roughly a third of its intended size on a modern phone.
      *
      * Day is sized so a screenful of portrait phone photos lands at three per
      * row, which is what a gallery is expected to look like. Month and year are
      * overviews - the point there is covering ground, not seeing detail.
      */
-    enum class Zoom(val targetHeight: Int, val label: String) {
-        DAY(168, "Day"),
-        MONTH(96, "Month"),
-        YEAR(56, "Year");
+    enum class Zoom(val targetHeightDp: Int, val label: String) {
+        DAY(180, "Day"),
+        MONTH(110, "Month"),
+        YEAR(64, "Year");
 
         fun zoomIn() = when (this) {
             YEAR -> MONTH; MONTH -> DAY; DAY -> DAY

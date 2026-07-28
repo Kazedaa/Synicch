@@ -66,7 +66,9 @@ fun Timeline(
             widthPx,
             zoom,
             with(density) { SPACING.toPx() },
-            with(density) { zoom.targetHeight.toFloat() },
+            // Row heights are in dp, the layout is in pixels. Converting here
+            // keeps Grid free of any Compose dependency.
+            with(density) { zoom.targetHeightDp.dp.toPx() },
         )
     }
 
