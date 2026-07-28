@@ -100,9 +100,8 @@ fun Timeline(
             .fillMaxSize()
             .onSizeChanged { widthPx = it.width.toFloat() }
             .pointerInput(Unit) {
-                detectTransformGestures { _, _, gestureZoom, _ ->
-                    if (gestureZoom > 1.35f) zoom = zoom.zoomIn()
-                    else if (gestureZoom < 0.74f) zoom = zoom.zoomOut()
+                detectPinch { zoomedIn ->
+                    zoom = if (zoomedIn) zoom.zoomIn() else zoom.zoomOut()
                 }
             }
     ) {
@@ -187,6 +186,40 @@ private fun currentSection(entries: List<Grid.Entry>, index: Int): String {
     }
     return (entries.firstOrNull() as? Grid.Entry.Header)
         ?.let { Grid.shortMonth(it.section) } ?: ""
+}
+
+/**
+ * Two-finger pinch, watched ahead of the list underneath it.
+ *
+ * The events are read on the initial pass because a lazy list treats a
+ * two-finger drag as an ordinary scroll and consumes it first - which is why a
+ * pinch would otherwise just scroll the timeline instead of changing zoom
+ * level. Nothing is consumed until the fingers actually spread or close, so
+ * normal scrolling is untouched.
+ *
+ * [onZoom] is called with true to go finer (year -> month -> day).
+ */
+private suspend fun PointerInputScope.detectPinch(onZoom: (Boolean) -> Unit) {
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        // Zoom is accumulated across the whole gesture rather than acted on per
+        // event: one deliberate spread should move exactly one level.
+        var accumulated = 1f
+        do {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            if (event.changes.count { it.pressed } >= 2) {
+                val change = event.calculateZoom()
+                if (change != 1f) {
+                    accumulated *= change
+                    if (accumulated > 1.35f || accumulated < 0.74f) {
+                        onZoom(accumulated > 1f)
+                        accumulated = 1f
+                    }
+                    event.changes.forEach { it.consume() }
+                }
+            }
+        } while (event.changes.any { it.pressed })
+    }
 }
 
 private fun Grid.Entry.keyOf(): String = when (this) {
