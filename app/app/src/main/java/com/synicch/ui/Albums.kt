@@ -173,6 +173,83 @@ private fun AlbumCard(
  * how to read.
  */
 @Composable
+fun AddToAlbumScreen(
+    albumName: String,
+    candidates: List<MediaItem>,
+    localIds: Set<Long>,
+    thumbFor: (MediaItem) -> Any,
+    onBack: () -> Unit,
+    onAdd: (List<Long>) -> Unit,
+) {
+    var selection by remember(candidates) { mutableStateOf(setOf<Long>()) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(if (selection.isEmpty()) "Add to $albumName"
+                         else "${selection.size} selected", maxLines = 1)
+                },
+                navigationIcon = {
+                    IconButton(onBack) { Icon(Icons.Default.Close, "Cancel") }
+                },
+                actions = {
+                    if (candidates.isNotEmpty()) {
+                        TextButton({
+                            selection = if (selection.size == candidates.size) emptySet()
+                                        else candidates.map { it.id }.toSet()
+                        }) {
+                            Text(if (selection.size == candidates.size) "None" else "All")
+                        }
+                    }
+                },
+            )
+        },
+        bottomBar = {
+            if (selection.isNotEmpty()) {
+                BottomAppBar {
+                    Button(
+                        onClick = { onAdd(selection.toList()) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    ) { Text("Add ${selection.size}") }
+                }
+            }
+        },
+    ) { pad ->
+        Box(Modifier.padding(pad).fillMaxSize()) {
+            if (candidates.isEmpty()) {
+                Box(Modifier.fillMaxSize(), Alignment.Center) {
+                    Text("Everything is already in this album",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                Timeline(
+                    items = candidates,
+                    selection = selection,
+                    localIds = localIds,
+                    thumbFor = thumbFor,
+                    // Nothing to open here - every tap is a pick.
+                    onOpen = { item ->
+                        selection = if (item.id in selection) selection - item.id
+                                    else selection + item.id
+                    },
+                    onToggleSelect = { item ->
+                        selection = if (item.id in selection) selection - item.id
+                                    else selection + item.id
+                    },
+                    onSelectSection = { ids ->
+                        selection = if (ids.all { it in selection }) selection - ids.toSet()
+                                    else selection + ids
+                    },
+                    picking = true,
+                )
+            }
+        }
+    }
+}
+
+/** Persistent reminder while a trip is being recorded. */
+@Composable
 fun RecordingBanner(album: Album, days: Int, onStop: () -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.primaryContainer,
