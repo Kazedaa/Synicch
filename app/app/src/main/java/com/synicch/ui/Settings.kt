@@ -166,6 +166,16 @@ fun TrashScreen(
                 navigationIcon = { IconButton(onBack) {
                     Icon(Icons.Default.ArrowBack, "Back") } },
                 actions = {
+                    // Emptying the trash is a normal thing to want; picking 200
+                    // thumbnails one at a time to do it is not.
+                    if (items.isNotEmpty()) {
+                        TextButton({
+                            selection = if (selection.size == items.size) emptySet()
+                                        else items.map { it.id }.toSet()
+                        }) {
+                            Text(if (selection.size == items.size) "None" else "All")
+                        }
+                    }
                 },
             )
         },
