@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Iterator
 
-from . import config, db
+from . import config, db, exifinfo
 from .fingerprint import quick_fingerprint
 from .timestamps import now_utc_iso, resolve
 
@@ -139,6 +139,7 @@ def index(conn, *, root: Path | None = None, verbose: bool = True,
                 kind, ext = classify(Path(display_name))
                 width = height = None
                 duration = None
+                cam = dict.fromkeys(exifinfo.FIELDS)
                 err = None
 
                 try:
@@ -147,6 +148,7 @@ def index(conn, *, root: Path | None = None, verbose: bool = True,
 
                     if kind == "photo":
                         width, height = photo_dimensions(path)
+                        cam = exifinfo.read(path)
                     elif kind == "video":
                         width, height, duration = video_metadata(path)
 
@@ -161,17 +163,21 @@ def index(conn, *, root: Path | None = None, verbose: bool = True,
                     if verbose:
                         print(f"  ! {rel}: {err}")
 
+                camera = tuple(cam[f] for f in exifinfo.FIELDS)
+
                 if prior:
                     conn.execute(
                         """UPDATE files SET size=?, mtime=?, quick_fp=?, kind=?, ext=?,
                                width=?, height=?, duration_s=?,
                                captured_local=?, captured_offset=?, captured_utc=?,
                                ts_source=?, display_name=?, phone_trashed=?,
+                               camera_make=?, camera_model=?, f_number=?,
+                               exposure_s=?, focal_mm=?, iso=?,
                                last_scanned=?, scan_error=?
                            WHERE id=?""",
                         (st.st_size, st.st_mtime, fp, kind, ext, width, height,
                          duration, local, offset, utc, source,
-                         display_name, int(phone_trashed),
+                         display_name, int(phone_trashed), *camera,
                          now_utc_iso(), err, prior[0]),
                     )
                     updated += 1
@@ -181,11 +187,13 @@ def index(conn, *, root: Path | None = None, verbose: bool = True,
                                width, height, duration_s,
                                captured_local, captured_offset, captured_utc, ts_source,
                                display_name, phone_trashed,
+                               camera_make, camera_model, f_number, exposure_s,
+                               focal_mm, iso,
                                state, first_seen, last_scanned, scan_error)
-                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'active', ?, ?, ?)""",
+                           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'active', ?, ?, ?)""",
                         (rel, st.st_size, st.st_mtime, fp, kind, ext, width, height,
                          duration, local, offset, utc, source,
-                         display_name, int(phone_trashed),
+                         display_name, int(phone_trashed), *camera,
                          now_utc_iso(), now_utc_iso(), err),
                     )
                     added += 1

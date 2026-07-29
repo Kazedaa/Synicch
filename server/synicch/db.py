@@ -11,7 +11,7 @@ from typing import Any
 
 from . import config
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 6
 _SCHEMA_SQL = Path(__file__).with_name("schema.sql")
 
 # Applied in order to bring an older database up to date. schema.sql always
@@ -27,6 +27,17 @@ _MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE files ADD COLUMN codec TEXT",
         "ALTER TABLE files ADD COLUMN thumb_at TEXT",
         "CREATE INDEX IF NOT EXISTS idx_files_thumb ON files(thumb_at)",
+    ],
+    # v4 and v5 add only new tables, which schema.sql creates on its own.
+    4: [],
+    5: [],
+    6: [
+        "ALTER TABLE files ADD COLUMN camera_make TEXT",
+        "ALTER TABLE files ADD COLUMN camera_model TEXT",
+        "ALTER TABLE files ADD COLUMN f_number REAL",
+        "ALTER TABLE files ADD COLUMN exposure_s REAL",
+        "ALTER TABLE files ADD COLUMN focal_mm REAL",
+        "ALTER TABLE files ADD COLUMN iso INTEGER",
     ],
 }
 

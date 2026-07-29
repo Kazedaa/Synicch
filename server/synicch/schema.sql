@@ -43,6 +43,14 @@ CREATE TABLE IF NOT EXISTS files (
     captured_utc    TEXT,      -- resolved instant, used for all sorting
     ts_source       TEXT,      -- exif_with_offset | exif | filename | mtime
 
+    -- Camera settings. Display only -- nothing here changes what the library
+    -- does, and most non-camera files carry none of it.
+    camera_make   TEXT,
+    camera_model  TEXT,
+    f_number      REAL,
+    exposure_s    REAL,
+    focal_mm      REAL,
+    iso           INTEGER,
 
 
     state         TEXT    NOT NULL DEFAULT 'active',   -- active | trashed | purged
