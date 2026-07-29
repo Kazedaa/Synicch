@@ -17,7 +17,7 @@ from pathlib import Path
 
 from flask import Flask, abort, g, jsonify, request, send_file
 
-from . import auth, config, db, media
+from . import auth, config, db, exifinfo, media
 from .timestamps import now_utc_iso
 
 app = Flask(__name__)
@@ -87,6 +87,18 @@ def _album_map(rows) -> dict[int, list[int]]:
     return out
 
 
+def _get(row, column, default=None):
+    """Read a column an older database may not have been migrated to yet.
+
+    The API can be restarted before `synicch init` has run the migration, and a
+    missing camera field is not worth a 500.
+    """
+    try:
+        return row[column]
+    except (IndexError, KeyError):
+        return default
+
+
 def _serialize(r, albums: list[int] | None = None) -> dict:
     base = {"albums": albums or []}
     return base | {
@@ -107,6 +119,12 @@ def _serialize(r, albums: list[int] | None = None) -> dict:
         # Lets the app decide a local file on the phone is this same photo and
         # skip the download entirely.
         "fp": r["quick_fp"],
+        # Display only, and absent on anything that did not come from a camera.
+        "camera": exifinfo.label(_get(r, "camera_make"), _get(r, "camera_model")),
+        "f_number": _get(r, "f_number"),
+        "exposure": _get(r, "exposure_s"),
+        "focal": _get(r, "focal_mm"),
+        "iso": _get(r, "iso"),
         "path": r["rel_path"],
     }
 
