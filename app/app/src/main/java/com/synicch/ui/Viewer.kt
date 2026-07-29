@@ -252,6 +252,182 @@ fun Viewer(
  * really is backed up before freeing up space.
  */
 @Composable
+private fun MediaDetails(
+    item: MediaItem,
+    albums: List<Album>,
+    local: LocalMedia.Local?,
+    coverFor: (Album) -> Any?,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .navigationBarsPadding()
+            .padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
+    ) {
+        Text(item.name, style = MaterialTheme.typography.titleMedium)
+        timestampNote(item.tsSource)?.let {
+            Spacer(Modifier.height(4.dp))
+            Text(it, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+
+        if (albums.isNotEmpty()) {
+            SectionTitle("Albums")
+            albums.forEach { album ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    val cover = coverFor(album)
+                    if (cover != null) {
+                        AsyncImage(cover, null, contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(56.dp)
+                                .clip(RoundedCornerShape(10.dp)))
+                    } else {
+                        Box(Modifier.size(56.dp).clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant))
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text(album.name, style = MaterialTheme.typography.bodyMedium)
+                        Text("${album.count} items",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+
+        SectionTitle("Details")
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(vertical = 4.dp)) {
+                if (item.localOnly) {
+                    DetailRow(
+                        Icons.Default.CloudUpload,
+                        "Not backed up yet",
+                        "Waiting for Syncthing to carry it to the server",
+                    )
+                } else {
+                    DetailRow(
+                        Icons.Default.CloudDone,
+                        "In the library  -  ${formatBytes(item.size)}",
+                        item.path,
+                    )
+                }
+
+                item.camera?.let { camera ->
+                    DetailRow(Icons.Default.CameraAlt, camera, exposureLine(item))
+                }
+
+                DetailRow(
+                    if (item.isVideo) Icons.Default.Videocam else Icons.Default.Image,
+                    item.name,
+                    listOfNotNull(
+                        megapixels(item.w, item.h),
+                        if (item.w != null && item.h != null) "${item.w} x ${item.h}" else null,
+                        item.duration?.let { formatDuration(it) },
+                        item.codec?.uppercase(),
+                    ).joinToString("  -  ").ifEmpty { null },
+                )
+
+                if (local != null) {
+                    DetailRow(
+                        Icons.Default.PhoneAndroid,
+                        "On this phone  -  ${formatBytes(local.size)}",
+                        local.path?.substringBeforeLast('/'),
+                    )
+                } else {
+                    DetailRow(
+                        Icons.Default.CloudQueue,
+                        "Not on this phone",
+                        "Held by the server only",
+                    )
+                }
+
+                if (item.phoneTrashed) {
+                    DetailRow(Icons.Default.DeleteOutline, "Deleted on the phone",
+                        "Kept here - the server keeps everything")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(text, Modifier.padding(top = 22.dp, bottom = 6.dp),
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun DetailRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    value: String,
+    note: String?,
+) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+        Icon(icon, null, Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(16.dp))
+        Column {
+            Text(value, style = MaterialTheme.typography.bodyMedium)
+            note?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+private fun timestampNote(source: String?): String? = when (source) {
+    "phone" -> "From this phone, straight out of the camera"
+    "exif_with_offset" -> "From the camera, timezone included"
+    "exif" -> "From the camera, read in your timezone"
+    "filename" -> "Read from the filename"
+    "mtime" -> "File modified time - the least reliable source"
+    else -> null
+}
+
+/** "Sun, 12 Jul 2026  -  12:11 pm" from the naive timestamp the camera wrote. */
+private fun prettyDateTime(captured: String?): String? = runCatching {
+    val t = LocalDateTime.parse(captured!!.take(19))
+    t.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy")) + "  -  " +
+        t.format(DateTimeFormatter.ofPattern("h:mm a")).lowercase()
+}.getOrNull()
+
+private fun megapixels(w: Int?, h: Int?): String? {
+    if (w == null || h == null || w <= 0 || h <= 0) return null
+    return "%.1f MP".format(w.toLong() * h / 1_000_000.0)
+}
+
+/** The row a photographer reads first: aperture, shutter, focal length, ISO. */
+private fun exposureLine(item: MediaItem): String? = listOfNotNull(
+    item.fNumber?.let { "f/" + trimNumber(it) },
+    item.exposure?.let {
+        if (it >= 1.0) "${trimNumber(it)}s" else "1/${(1.0 / it).roundToInt()}s"
+    },
+    // Two decimals here specifically: phone lenses are 5.56mm, and rounding
+    // that to 5.6 loses the one digit that distinguishes the cameras.
+    item.focal?.let { "${trimNumber(it, 2)} mm" },
+    item.iso?.let { "ISO $it" },
+).joinToString("   ").ifEmpty { null }
+
+private fun trimNumber(v: Double, decimals: Int = 1): String =
+    "%.${decimals}f".format(v).trimEnd('0').trimEnd('.')
+
+/**
+ * One action in the viewer's bottom bar.
+ *
+ * It had no feedback at all: no ripple, and an interaction source rebuilt on
+ * every recomposition so nothing could have tracked a press anyway. A control
+ * that gives nothing back leaves you wondering whether the tap registered,
+ * which on a Delete button is a genuinely bad moment.
+ */
+@Composable
 private fun ViewerAction(icon: androidx.compose.ui.graphics.vector.ImageVector,
                          label: String, onClick: () -> Unit) {
     Column(
