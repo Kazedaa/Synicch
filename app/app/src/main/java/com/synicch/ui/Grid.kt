@@ -40,7 +40,8 @@ object Grid {
     data class Row(val items: List<MediaItem>, val height: Float)
 
     sealed interface Entry {
-        data class Header(val title: String, val key: String,
+        /** [ids] is everything under this heading, so a day can be selected in one tap. */
+        data class Header(val title: String, val key: String, val ids: List<Long>,
                           val section: String) : Entry
         data class Photos(val row: Row, val key: String) : Entry
     }
@@ -119,7 +120,7 @@ object Grid {
         fun flush() {
             if (bucket.isEmpty()) return
             val key = sectionKey!!
-            out.add(Entry.Header(prettySection(key), "h_$key", key))
+            out.add(Entry.Header(prettySection(key), "h_$key", bucket.map { it.id }, key))
             justify(bucket, width, targetHeight, spacing)
                 .forEachIndexed { i, row -> out.add(Entry.Photos(row, "r_${key}_$i")) }
             bucket = ArrayList()
