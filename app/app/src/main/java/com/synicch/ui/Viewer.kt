@@ -286,6 +286,10 @@ private fun ViewerAction(icon: androidx.compose.ui.graphics.vector.ImageVector,
  *   visibly soft at 3x, so the original is layered on top once magnified past
  *   the point where the preview runs out of detail.
  *
+ * At fit size the first movement of a drag decides who owns it: sideways is the
+ * pager's, up and down are this view's. Without that, every horizontal swipe
+ * also nudged the photo down towards being dismissed, which is what made moving
+ * through the gallery feel unsteady.
  */
 @Composable
 private fun ZoomableImage(
@@ -374,6 +378,10 @@ private fun ZoomableImage(
                 )
             }
             .pointerInput(Unit) {
+                // Who this drag belongs to: 0 not decided yet, 1 this photo,
+                // -1 the pager underneath. Decided once, then held for the rest
+                // of the gesture so a wandering finger cannot hand it back.
+                var owner = 0
                 detectTransforms(
                     onGesture = { centroid, pan, gestureZoom ->
                         if (animateTo != null) return@detectTransforms false
@@ -384,18 +392,26 @@ private fun ZoomableImage(
                             offset = focused(focus, next)
                             scale = next
                             if (next > HI_RES_SCALE) wantHiRes = true
+                            owner = 1                 // a pinch is never a swipe
                         }
 
                         if (scale > 1f) {
                             offset = clamp(offset + pan, scale)
                             closing = Offset.Zero
-                        } else {
+                            owner = 1
+                        } else if (owner != -1) {
+                            // At fit size the photo has nowhere to pan to, so a
+                            // vertical drag means dismiss or details instead.
                             offset = Offset.Zero
-                            closing += pan
+                            val moved = closing + pan
+                            if (owner == 0) {
+                                owner = if (abs(moved.x) > abs(moved.y)) -1 else 1
+                            }
+                            closing = if (owner == 1) Offset(0f, moved.y) else Offset.Zero
                         }
 
                         onZoomChanged(scale > 1f)
-                        true
+                        owner == 1
                     },
                     onEnd = {
                         if (scale <= 1f) {
@@ -407,6 +423,7 @@ private fun ZoomableImage(
                         } else {
                             offset = clamp(offset, scale)
                         }
+                        owner = 0
                     },
                 )
             },
