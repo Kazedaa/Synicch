@@ -265,7 +265,8 @@ private fun MediaDetails(
             .navigationBarsPadding()
             .padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
     ) {
-        Text(item.name, style = MaterialTheme.typography.titleMedium)
+        Text(prettyDateTime(item.captured) ?: item.name,
+            style = MaterialTheme.typography.titleMedium)
         timestampNote(item.tsSource)?.let {
             Spacer(Modifier.height(4.dp))
             Text(it, style = MaterialTheme.typography.bodySmall,
