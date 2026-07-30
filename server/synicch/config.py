@@ -28,6 +28,13 @@ REPORTS = HOME / "reports"
 UNSORTED_DIR = "_unsorted"
 TRASH_DIR = "_trash"
 
+# The keeper link. Every known file gets one hardlink here and keeps it for as
+# long as the library holds the file, which is what makes "the server keeps
+# everything" true rather than aspirational: album and trash folders are
+# rebuilt from scratch on every scan, and camera-backup empties itself the
+# moment a photo leaves the phone. Neither can be what holds the bytes.
+ARCHIVE_DIR = "_archive"
+
 # Files Syncthing manages or leaves behind; never index these.
 SKIP_NAMES = {".stfolder", ".stignore", ".stversions", ".stglobalignore"}
 SKIP_PREFIXES = (".syncthing.", "~syncthing~")
@@ -94,5 +101,5 @@ def strip_android_prefix(name: str) -> tuple[str, bool]:
 
 def ensure_dirs() -> None:
     for d in (HOME, LIBRARY, CACHE, THUMBS, PREVIEWS, REPORTS,
-              LIBRARY / UNSORTED_DIR, LIBRARY / TRASH_DIR):
+              LIBRARY / UNSORTED_DIR, LIBRARY / TRASH_DIR, LIBRARY / ARCHIVE_DIR):
         d.mkdir(parents=True, exist_ok=True)

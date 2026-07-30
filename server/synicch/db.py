@@ -11,7 +11,7 @@ from typing import Any
 
 from . import config
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 _SCHEMA_SQL = Path(__file__).with_name("schema.sql")
 
 # Applied in order to bring an older database up to date. schema.sql always
@@ -38,6 +38,9 @@ _MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE files ADD COLUMN exposure_s REAL",
         "ALTER TABLE files ADD COLUMN focal_mm REAL",
         "ALTER TABLE files ADD COLUMN iso INTEGER",
+    ],
+    7: [
+        "ALTER TABLE files ADD COLUMN archive_path TEXT",
     ],
 }
 

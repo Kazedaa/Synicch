@@ -52,6 +52,10 @@ CREATE TABLE IF NOT EXISTS files (
     focal_mm      REAL,
     iso           INTEGER,
 
+    -- The keeper hardlink, relative to library/. Once this exists the file
+    -- survives leaving the phone: camera-backup follows the phone, this does
+    -- not. Everything else under library/ is a rebuildable view.
+    archive_path  TEXT,
 
     state         TEXT    NOT NULL DEFAULT 'active',   -- active | trashed | purged
     trashed_at    TEXT,
