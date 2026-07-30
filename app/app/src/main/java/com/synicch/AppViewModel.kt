@@ -278,6 +278,45 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Only on the phone, so there is no trash to fall back to. */
+    fun deleteLocalOnly(items: List<MediaItem>) = viewModelScope.launch {
+        val uris = items.mapNotNull { repo.localUris.value[it.id] }
+        if (uris.isEmpty()) return@launch
+        trashedForPhoneDelete = emptyList()
+        _pendingPhoneDelete.value = uris
+    }
+
+    /**
+     * Wait for the backup to land, then delete.
+     *
+     * The app deliberately has no upload path - Syncthing owns the backup, and
+     * a second one would only disagree with it. What this can do is ask the
+     * server to look now, and check whether the file has arrived. If it has
+     * not, nothing is deleted and it says so.
+     */
+    fun backupThenDelete(items: List<MediaItem>) = viewModelScope.launch {
+        _working.value = "Asking the server to look for these"
+        withContext(Dispatchers.IO) { repo.api.triggerScan() }
+
+        repeat(BACKUP_WAIT_TRIES) { attempt ->
+            delay(2500)
+            _working.value = "Waiting for the backup to arrive (${attempt + 1})"
+            repo.sync()
+            val matched = items.mapNotNull { repo.serverMatch(it) }
+            if (matched.size == items.size) {
+                _working.value = null
+                moveToTrash(matched.map { it.id })
+                return@launch
+            }
+        }
+
+        _working.value = null
+        _toast.value = "Not on the server yet. Nothing was deleted - " +
+            "check Syncthing is running on this phone, then try again."
+    }
+
+    // ------------------------------------------------ getting files back --
+
     fun phoneDeleteDone() {
         _pendingPhoneDelete.value = emptyList()
         trashedForPhoneDelete = emptyList()
