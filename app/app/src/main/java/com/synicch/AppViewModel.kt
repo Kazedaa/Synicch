@@ -80,6 +80,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (repo.paired) {
                 repo.loadCached()          // instant, offline, no network
                 repo.refreshLocal()
+                // An empty cache means a first run, or a cache the app dropped
+                // to change its shape. Either way the library has to be pulled
+                // before there is anything to show, so do it rather than
+                // leaving an empty gallery waiting for someone to press Sync.
+                if (repo.items.value.isEmpty()) repo.sync()
                 refreshAll()
             }
         }

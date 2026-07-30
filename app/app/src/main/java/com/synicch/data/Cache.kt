@@ -16,7 +16,7 @@ import android.database.sqlite.SQLiteOpenHelper
  * the network completely down. Tailscale over mobile data is not dependable, so
  * "offline" is the assumed state rather than an error case.
  */
-class Cache(context: Context) : SQLiteOpenHelper(context, "synicch.db", null, 1) {
+class Cache(context: Context) : SQLiteOpenHelper(context, "synicch.db", null, 2) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
@@ -25,7 +25,7 @@ class Cache(context: Context) : SQLiteOpenHelper(context, "synicch.db", null, 1)
               w INTEGER, h INTEGER, size INTEGER,
               captured TEXT, captured_utc TEXT, duration REAL, codec TEXT,
               state TEXT, phone_trashed INTEGER, has_thumb INTEGER,
-              fp TEXT, albums TEXT,
+              fp TEXT, albums TEXT, ts_source TEXT,
               camera TEXT, f_number REAL, exposure REAL, focal REAL, iso INTEGER,
               path TEXT
             )""")
@@ -50,6 +50,7 @@ class Cache(context: Context) : SQLiteOpenHelper(context, "synicch.db", null, 1)
                     put("id", m.id); put("name", m.name); put("kind", m.kind)
                     put("w", m.w); put("h", m.h); put("size", m.size)
                     put("captured", m.captured); put("captured_utc", m.capturedUtc)
+                    put("ts_source", m.tsSource)
                     put("duration", m.duration); put("codec", m.codec)
                     put("camera", m.camera); put("f_number", m.fNumber)
                     put("exposure", m.exposure); put("focal", m.focal)
@@ -144,6 +145,7 @@ class Cache(context: Context) : SQLiteOpenHelper(context, "synicch.db", null, 1)
             id = l("id"), name = s("name") ?: "", kind = s("kind") ?: "photo",
             w = i("w"), h = i("h"), size = l("size"),
             captured = s("captured"), capturedUtc = s("captured_utc"),
+            tsSource = s("ts_source"),
             duration = d("duration"), codec = s("codec"),
             camera = s("camera"), fNumber = d("f_number"),
             exposure = d("exposure"), focal = d("focal"),
