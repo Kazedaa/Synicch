@@ -181,7 +181,10 @@ fun AddToAlbumScreen(
     onBack: () -> Unit,
     onAdd: (List<Long>) -> Unit,
 ) {
-    var selection by remember(candidates) { mutableStateOf(setOf<Long>()) }
+    // Deliberately not keyed on [candidates]: it is a filtered list rebuilt on
+    // every recomposition, so keying on it would drop a half-made selection the
+    // moment a background sync landed.
+    var selection by remember { mutableStateOf(setOf<Long>()) }
 
     Scaffold(
         topBar = {
