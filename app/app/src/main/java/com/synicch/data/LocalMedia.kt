@@ -91,7 +91,15 @@ class LocalMedia(private val context: Context) {
                     collection, projection,
                     // Camera only. Screenshots, downloads and messaging media
                     // are not backed up, so they must not appear here either.
-                    "${MediaStore.MediaColumns.DATA} LIKE ?",
+                    //
+                    // Android's own renamed files are excluded outright: a
+                    // .trashed- copy is something the user already deleted, and
+                    // its prefixed name never matches the server record, so
+                    // leaving it in would have every deleted photo reappear as
+                    // "not backed up yet".
+                    "${MediaStore.MediaColumns.DATA} LIKE ?" +
+                        " AND ${MediaStore.MediaColumns.DISPLAY_NAME} NOT LIKE '.trashed-%'" +
+                        " AND ${MediaStore.MediaColumns.DISPLAY_NAME} NOT LIKE '.pending-%'",
                     arrayOf("%/DCIM/%"),
                     "${MediaStore.MediaColumns.DATE_TAKEN} DESC"
                 )?.use { c ->
