@@ -218,10 +218,21 @@ fun TrashScreen(
                     Box(
                         Modifier.aspectRatio(1f)
                             .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .clickable {
-                                selection = if (picked) selection - item.id
-                                            else selection + item.id
-                            }
+                            // Tap opens, long-press selects - the same way the
+                            // rest of the app works. Trash having its own rule
+                            // was the sort of inconsistency you feel before you
+                            // can name it.
+                            .combinedClickable(
+                                onClick = {
+                                    if (selection.isEmpty()) onOpen(index)
+                                    else selection = if (picked) selection - item.id
+                                                     else selection + item.id
+                                },
+                                onLongClick = {
+                                    selection = if (picked) selection - item.id
+                                                else selection + item.id
+                                },
+                            )
                     ) {
                         AsyncImage(thumbFor(item.id), item.name,
                             Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
