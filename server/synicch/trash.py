@@ -225,9 +225,11 @@ def purge(conn, *, file_ids: list[int] | None = None, force: bool = False,
         freed = r["size"] or 0
 
         # Identify the file by inode so view links are matched by *content*
-        # rather than by name.
+        # rather than by name. Either copy will do; a photo already gone from
+        # the phone has only the archive left to identify it by.
+        reference = src if src.exists() else archive
         try:
-            inode = src.stat().st_ino
+            inode = reference.stat().st_ino if reference and reference.exists() else None
         except OSError:
             inode = None
 
