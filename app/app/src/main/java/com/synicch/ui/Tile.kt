@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.PlayCircleFilled
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -59,6 +60,18 @@ fun Tile(
                 .then(if (selected) Modifier.scale(0.86f).clip(RoundedCornerShape(6.dp))
                       else Modifier),
         )
+
+        // A tick on everything the server holds, nothing on what it does not.
+        // Stated positively on purpose: this is a tool whose whole point is a
+        // backup you trust, so "this one is safe" is the thing worth seeing,
+        // and the absence of it is loud enough for the handful that are not.
+        if (!item.localOnly) {
+            Icon(
+                Icons.Default.CloudDone, "Backed up",
+                tint = Color.White.copy(alpha = 0.9f),
+                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(14.dp),
+            )
+        }
 
         if (item.isVideo) {
             Row(

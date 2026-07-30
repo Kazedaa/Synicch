@@ -36,6 +36,15 @@ data class MediaItem(
     /** Falls back to 1:1 so the grid can lay out before dimensions are known. */
     val aspect: Float get() = if (w != null && h != null && h > 0) w.toFloat() / h else 1f
     val isVideo: Boolean get() = kind == "video"
+
+    /**
+     * On the phone, not yet on the server.
+     *
+     * Negative ids are minted by [LocalMedia.Local.asItem]; the server only
+     * ever issues positive ones. Anything that would call the API checks this
+     * first, because there is nothing up there to call about.
+     */
+    val localOnly: Boolean get() = id < 0
 }
 
 @Serializable

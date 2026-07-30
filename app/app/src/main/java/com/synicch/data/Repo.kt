@@ -32,15 +32,29 @@ class Repo(private val context: Context) {
     val cache = Cache(context)
     val local = LocalMedia(context)
 
+    /**
+     * The timeline is two sources merged, not one.
+     *
+     * Photos the server has are the library. Photos only the phone has are the
+     * last few minutes of your life that Syncthing has not carried across yet,
+     * and leaving them out is what made a video taken thirty seconds ago look
+     * like it had not been taken at all.
+     */
     private var serverItems: List<MediaItem> = emptyList()
+    private var phoneOnlyItems: List<MediaItem> = emptyList()
 
     private val _items = MutableStateFlow<List<MediaItem>>(emptyList())
     val items: StateFlow<List<MediaItem>> = _items
 
+    /** Rebuild the timeline from both halves. */
     private fun remerge() {
-        _items.value = serverItems
+        _items.value = (serverItems + phoneOnlyItems)
             .sortedByDescending { it.capturedUtc ?: it.captured ?: "" }
     }
+
+    /** The server's record for a phone-only item, once one exists. */
+    fun serverMatch(item: MediaItem): MediaItem? =
+        serverItems.firstOrNull { it.name == item.name && it.size == item.size }
 
     private val _albums = MutableStateFlow<List<Album>>(emptyList())
     val albums: StateFlow<List<Album>> = _albums
@@ -101,8 +115,15 @@ class Repo(private val context: Context) {
     suspend fun refreshLocal() = withContext(Dispatchers.IO) {
         runCatching {
             local.scan()
-            _notBackedUp.value = local.notBackedUp(serverItems)
-            _localUris.value = local.matchAll(serverItems)
+            val pending = local.notBackedUp(serverItems)
+            _notBackedUp.value = pending
+            phoneOnlyItems = pending.map { it.asItem() }
+            remerge()
+            // Both halves need a local file to draw from: the server's records
+            // where the phone still holds a copy, and the phone-only ones,
+            // which have nothing else to draw from at all.
+            _localUris.value = local.matchAll(serverItems) +
+                pending.associate { -it.id to it.uri }
         }
     }
 
