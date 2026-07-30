@@ -46,9 +46,21 @@ class Repo(private val context: Context) {
     private val _items = MutableStateFlow<List<MediaItem>>(emptyList())
     val items: StateFlow<List<MediaItem>> = _items
 
-    /** Rebuild the timeline from both halves. */
+    /**
+     * Rebuild the timeline from both halves.
+     *
+     * The phone-only half is re-checked against the server list here rather
+     * than trusted as computed. The camera roll and the library load
+     * independently, so whichever arrives first would otherwise decide: reading
+     * the roll before the cache had loaded made every photo look unbacked, and
+     * the timeline came out holding all of them twice. Filtering at the point
+     * of merge makes the result the same whatever order they land in, and drops
+     * a pending photo the instant its server record shows up.
+     */
     private fun remerge() {
-        _items.value = (serverItems + phoneOnlyItems)
+        val known = serverItems.mapTo(HashSet()) { local.key(it.name, it.size) }
+        val pending = phoneOnlyItems.filter { local.key(it.name, it.size) !in known }
+        _items.value = (serverItems + pending)
             .sortedByDescending { it.capturedUtc ?: it.captured ?: "" }
     }
 
