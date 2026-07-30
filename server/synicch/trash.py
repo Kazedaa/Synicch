@@ -109,7 +109,14 @@ def move_to_trash(conn, file_ids: list[int]) -> int:
     """A state flag only. The file itself does not move, so this is instant and
     reversible and uses no extra disk.
 
+    The keeper link is made first. The app deletes the phone's copy straight
+    after trashing, Syncthing carries that deletion to camera-backup, and
+    without a link already in place the file would be gone within minutes
+    rather than after the retention period.
     """
+    from . import albums
+    albums.ensure_archive(conn, file_ids)
+
     now = now_utc_iso()
     n = 0
     for fid in file_ids:
