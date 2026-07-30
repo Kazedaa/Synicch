@@ -188,15 +188,80 @@ def apply_sessions(conn) -> int:
 
 # ------------------------------------------------------------ library tree --
 
+def archive_path_for(file_id: int, name: str) -> str:
+    """Sharded so no directory ends up with forty thousand entries in it."""
+    safe = _UNSAFE.sub("_", name).strip(". ") or "file"
+    return f"{config.ARCHIVE_DIR}/{file_id % 256:02x}/{file_id}_{safe}"
+
+
 def source_path(row) -> Path | None:
     """Where this file's bytes actually are, or None if they are gone.
 
-    Syncthing's copy is the only one there is, so a photo deleted from the
-    phone takes its bytes with it. That is the hole the archive link closes
-    later.
+    camera-backup first because that is the normal case, then the archive link,
+    which is the only copy left once the photo has been deleted from the phone
+    and Syncthing has carried that deletion across.
     """
     src = config.CAMERA_BACKUP / row["rel_path"]
-    return src if src.exists() else None
+    if src.exists():
+        return src
+    try:
+        rel = row["archive_path"]
+    except (IndexError, KeyError):
+        return None
+    if rel:
+        arc = config.LIBRARY / rel
+        if arc.exists():
+            return arc
+    return None
+
+
+def ensure_archive(conn, file_ids: list[int] | None = None) -> dict:
+    """Give every known file its keeper link.
+
+    Called before anything that can make the phone's copy disappear, and again
+    on every scan for whatever is new. Hardlinks, so a second reference to the
+    same bytes costs an inode entry and nothing else.
+
+    Idempotent: a file that already has a live link is skipped without touching
+    the disk.
+    """
+    if file_ids:
+        placeholders = ",".join("?" * len(file_ids))
+        rows = conn.execute(
+            f"SELECT id, rel_path, display_name, archive_path FROM files "
+            f"WHERE state != 'purged' AND id IN ({placeholders})", file_ids).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT id, rel_path, display_name, archive_path FROM files "
+            "WHERE state != 'purged'").fetchall()
+
+    linked = already = lost = 0
+    for r in rows:
+        rel = r["archive_path"]
+        if rel and (config.LIBRARY / rel).exists():
+            already += 1
+            continue
+
+        src = config.CAMERA_BACKUP / r["rel_path"]
+        if not src.exists():
+            # No backup copy and no archive link: the bytes are already gone
+            # from the library. Syncthing's .stversions may still hold them.
+            lost += 1
+            continue
+
+        dest_rel = archive_path_for(r["id"], r["display_name"] or Path(r["rel_path"]).name)
+        dest = config.LIBRARY / dest_rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if not dest.exists():
+                dest.hardlink_to(src)
+            conn.execute("UPDATE files SET archive_path=? WHERE id=?",
+                         (dest_rel, r["id"]))
+            linked += 1
+        except OSError:
+            lost += 1
+
+    return {"linked": linked, "already": already, "lost": lost}
 
 
 def build_tree(conn) -> dict:
@@ -207,15 +272,23 @@ def build_tree(conn) -> dict:
     this project is abandoned in three years, the albums are still ordinary
     folders that any file manager can open. Hardlinks make it cost nothing.
 
-    Every folder under library/ is a *view* and is rebuilt from nothing every
-    time.
+    The album, unsorted and trash folders are *views* and are rebuilt from
+    nothing every time. `_archive` is not one of them and is never touched
+    here -- it is what holds the file, and wiping it would turn a rebuild into
+    a deletion for anything no longer on the phone.
     """
     root = config.LIBRARY
     root.mkdir(parents=True, exist_ok=True)
 
+    # Keeper links first, so a rebuild can never run before the thing that
+    # makes the rebuild safe.
+    archive = ensure_archive(conn)
+
     # Rebuild wholesale. Links are cheap and this converges after renames,
     # deletions and membership changes without tracking what moved.
     for child in root.iterdir():
+        if child.name == config.ARCHIVE_DIR:
+            continue
         if child.is_dir():
             for f in child.rglob("*"):
                 if f.is_file():
@@ -251,19 +324,19 @@ def build_tree(conn) -> dict:
         used[base] = used.get(base, 0) + 1
         dirname = base if used[base] == 1 else f"{base}_{album['id']}"
         rows = conn.execute(
-            """SELECT f.id, f.rel_path, f.display_name FROM files f
+            """SELECT f.id, f.rel_path, f.display_name, f.archive_path FROM files f
                  JOIN album_members m ON m.file_id = f.id
                 WHERE m.album_id = ? AND f.state = 'active'""",
             (album["id"],)).fetchall()
         link_into(dirname, rows)
 
     link_into(config.UNSORTED_DIR, conn.execute(
-        """SELECT id, rel_path, display_name FROM files
+        """SELECT id, rel_path, display_name, archive_path FROM files
             WHERE state='active' AND phone_trashed=0
               AND id NOT IN (SELECT file_id FROM album_members)""").fetchall())
 
     link_into(config.TRASH_DIR, conn.execute(
-        "SELECT id, rel_path, display_name FROM files WHERE state='trashed'"
+        "SELECT id, rel_path, display_name, archive_path FROM files WHERE state='trashed'"
     ).fetchall())
 
-    return {"linked": linked, "skipped": skipped}
+    return {"linked": linked, "skipped": skipped, "archive": archive}

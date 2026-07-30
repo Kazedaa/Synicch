@@ -55,7 +55,7 @@ def server_sha256(conn, row) -> str | None:
     if row["sha256"]:
         return row["sha256"]
     from . import albums
-    path = config.CAMERA_BACKUP / row["rel_path"]
+    path = albums.source_path(row)
     if path is None:
         return None
     digest = full_sha256(path)

@@ -50,17 +50,20 @@ def pending(conn, *, force: bool = False) -> list[tuple]:
         params = (media.ALGO_VERSION,)
 
     rows = conn.execute(
-        f"""SELECT f.id, f.rel_path, f.kind, f.duration_s
+        f"""SELECT f.id, f.rel_path, f.archive_path, f.kind, f.duration_s
             FROM files f LEFT JOIN scores s ON s.file_id = f.id
             WHERE {where}
             ORDER BY f.captured_utc DESC""",   # newest first: the app becomes
         params,                                # useful before the pass finishes
     ).fetchall()
 
+    from . import albums
     out = []
     for r in rows:
-        path = config.CAMERA_BACKUP / r["rel_path"]
-        if path.exists():
+        # A photo already gone from the phone still has to be thumbnailable,
+        # and by then the library's keeper link is the only copy.
+        path = albums.source_path(r)
+        if path is not None:
             out.append((r["id"], str(path), r["kind"], r["duration_s"]))
     return out
 

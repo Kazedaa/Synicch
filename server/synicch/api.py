@@ -68,9 +68,14 @@ def _file_row(fid: int):
 def _abs_path(row) -> Path:
     """Where the bytes are.
 
-    Syncthing's copy is the only one, so this is simply where it landed.
+    Not simply the backup path: once a photo has been deleted from the phone,
+    Syncthing removes it from camera-backup and the library's keeper link is
+    the only copy left. Serving from the backup folder alone would mean every
+    photo vanished from the app shortly after leaving the device, which is the
+    exact opposite of what this server is for.
     """
-    return config.CAMERA_BACKUP / row["rel_path"]
+    from . import albums
+    return albums.source_path(row) or (config.CAMERA_BACKUP / row["rel_path"])
 
 
 def _album_map(rows) -> dict[int, list[int]]:
