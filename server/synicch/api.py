@@ -569,6 +569,22 @@ def trash_list():
     return jsonify({"items": trash.listing(get_db())})
 
 
+@app.post("/api/trash")
+@require_token
+def trash_add():
+    from . import trash
+    ids = (request.json or {}).get("ids", [])
+    return jsonify({"trashed": trash.move_to_trash(get_db(), ids)})
+
+
+@app.post("/api/trash/restore")
+@require_token
+def trash_restore():
+    from . import trash
+    ids = (request.json or {}).get("ids", [])
+    return jsonify({"restored": trash.restore(get_db(), ids)})
+
+
 @app.post("/api/trash/purge")
 @require_token
 def trash_purge():
