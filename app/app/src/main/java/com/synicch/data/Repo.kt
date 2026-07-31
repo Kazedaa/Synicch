@@ -270,10 +270,11 @@ class Repo(private val context: Context) {
     /**
      * Write a photo the server holds back onto the phone.
      *
-     * Lands in `DCIM/Restored` rather than `DCIM/Camera`: Camera is the folder
-     * Syncthing watches, and putting a file the server already holds back into
-     * the folder that syncs to the server is a round trip with nothing at the
-     * end of it.
+     * Lands in `DCIM/Camera`, which is the folder Syncthing watches. Anywhere
+     * else and the photo is on the phone but outside the backup - the one state
+     * this whole project exists to avoid. Putting it back where it came from
+     * makes it an ordinary camera-roll photo again, and Syncthing re-offering a
+     * file the server already has costs a comparison and nothing more.
      *
      * Written with IS_PENDING set, so a half-downloaded file is invisible to
      * every other gallery app until it is complete.
@@ -288,7 +289,7 @@ class Repo(private val context: Context) {
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, item.name)
             put(MediaStore.MediaColumns.MIME_TYPE, mimeOf(item))
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Restored")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
         val uri = context.contentResolver.insert(collection, values)
