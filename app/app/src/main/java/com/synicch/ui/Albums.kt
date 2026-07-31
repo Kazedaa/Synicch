@@ -32,7 +32,9 @@ fun AlbumsScreen(
     onOpenUnsorted: () -> Unit,
     onCreate: () -> Unit,
     onToggleRecording: (Album) -> Unit,
+    onDelete: (Album) -> Unit,
 ) {
+    var confirmDelete by remember { mutableStateOf<Album?>(null) }
 
     Box(Modifier.fillMaxSize()) {
         LazyVerticalGrid(
@@ -111,9 +113,13 @@ private fun AlbumCard(
     coverUrl: (Long) -> String,
     onOpen: () -> Unit,
     onToggleRecording: () -> Unit,
+    onLongPress: () -> Unit,
 ) {
     Card(
-        Modifier.aspectRatio(1f).clickable(onClick = onOpen)
+        Modifier.aspectRatio(1f).combinedClickable(
+            onClick = onOpen,
+            onLongClick = onLongPress,
+        )
     ) {
         Box(Modifier.fillMaxSize()) {
             if (album.cover != null) {
