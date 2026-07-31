@@ -95,6 +95,23 @@ fun Timeline(
         TimelineMetrics(starts, running)
     }
 
+    /*
+     * Stay at the top when new photos arrive at the top.
+     *
+     * A lazy list anchors itself to the item it is showing, so photos inserted
+     * above the viewport push the view down rather than appearing: the app
+     * opened from cache, the phone's newer photos merged in a moment later, and
+     * they landed off-screen above with nothing to say so. Anchoring is right
+     * when you are reading halfway down the timeline, so this only pulls back
+     * up when you were already at the top.
+     */
+    val newestKey = entries.firstOrNull()?.keyOf()
+    LaunchedEffect(newestKey) {
+        if (newestKey != null && listState.firstVisibleItemIndex <= 3) {
+            listState.scrollToItem(0)
+        }
+    }
+
     Box(
         Modifier
             .fillMaxSize()
