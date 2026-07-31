@@ -758,6 +758,18 @@ private fun VideoPage(
     Box(
         Modifier
             .fillMaxSize()
+            .pointerInput(Unit) {
+                detectVerticalDrag(
+                    onDrag = { dy -> drag += dy },
+                    onEnd = {
+                        when {
+                            drag > dismissAt -> onDismiss()
+                            drag < -dismissAt -> { onDetails(); settle++ }
+                            else -> settle++
+                        }
+                    },
+                )
+            }
     ) {
         AndroidView(
             factory = { ctx ->
@@ -781,5 +793,44 @@ private fun VideoPage(
                     alpha = 1f - 0.55f * progress
                 },
         )
+    }
+}
+
+/**
+ * Vertical drags only, claimed ahead of whatever is underneath.
+ *
+ * Read on the initial pass so an embedded view cannot consume the gesture
+ * first, but nothing is taken until the movement is past touch slop *and*
+ * more vertical than horizontal - which leaves sideways swipes to the pager
+ * and short presses to the view's own controls.
+ */
+private suspend fun PointerInputScope.detectVerticalDrag(
+    onDrag: (Float) -> Unit,
+    onEnd: () -> Unit,
+) {
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        val slop = viewConfiguration.touchSlop
+        var total = Offset.Zero
+        var claimed = false
+        var declined = false
+        var moved = false
+
+        do {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val pan = event.calculatePan()
+            total += pan
+            if (total.getDistance() > slop) moved = true
+
+            if (!claimed && !declined && moved) {
+                if (abs(total.y) > abs(total.x)) claimed = true else declined = true
+            }
+            if (claimed) {
+                onDrag(pan.y)
+                event.changes.forEach { if (it.positionChanged()) it.consume() }
+            }
+        } while (event.changes.any { it.pressed })
+
+        if (claimed) onEnd()
     }
 }
