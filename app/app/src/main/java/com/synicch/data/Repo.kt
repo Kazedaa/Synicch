@@ -85,6 +85,46 @@ class Repo(private val context: Context) {
 
     val paired: Boolean get() = api.configured
 
+    // ------------------------------------------------- watching the camera --
+
+    private var observer: android.database.ContentObserver? = null
+    private var rescanJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Notice photos as they are taken.
+     *
+     * Without this the timeline only learned about a new photo when the app was
+     * next opened, which for a gallery sitting open beside the camera is the
+     * wrong answer. MediaStore fires several notifications for one capture - the
+     * pending entry, the write, the final rename - so the rescan is debounced
+     * rather than run on each.
+     */
+    fun watchCameraRoll(scope: kotlinx.coroutines.CoroutineScope) {
+        if (observer != null) return
+        val obs = object : android.database.ContentObserver(
+            android.os.Handler(android.os.Looper.getMainLooper())
+        ) {
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                rescanJob?.cancel()
+                rescanJob = scope.launch {
+                    kotlinx.coroutines.delay(700)
+                    refreshLocal()
+                }
+            }
+        }
+        observer = obs
+        listOf(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+        ).forEach { context.contentResolver.registerContentObserver(it, true, obs) }
+    }
+
+    fun stopWatching() {
+        observer?.let { context.contentResolver.unregisterContentObserver(it) }
+        observer = null
+        rescanJob?.cancel()
+    }
+
     suspend fun loadCredentials() = withContext(Dispatchers.IO) {
         val p = context.prefs.data.first()
         val primary = p[KEY_URL] ?: ""

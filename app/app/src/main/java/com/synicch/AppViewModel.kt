@@ -74,6 +74,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val json = Json { ignoreUnknownKeys = true }
 
     init {
+        repo.clearShareCache()
+        // Photos taken while the app is open should turn up in the timeline
+        // without it being reopened.
+        repo.watchCameraRoll(viewModelScope)
         viewModelScope.launch {
             repo.loadCredentials()
             _paired.value = repo.paired
