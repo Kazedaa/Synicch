@@ -210,7 +210,8 @@ private fun Scrubber(
     var dragging by remember { mutableStateOf(false) }
     var trackPx by remember { mutableFloatStateOf(0f) }
 
-    val scrollable = metrics.total.coerceAtLeast(1f)
+    val viewport = listState.layoutInfo.viewportSize.height.toFloat()
+    val scrollable = (metrics.total - viewport).coerceAtLeast(1f)
 
     // The list index is one ahead of the entry index: the header slot sits at 0.
     val firstEntry = (listState.firstVisibleItemIndex - 1).coerceIn(0, entries.lastIndex)
@@ -254,7 +255,11 @@ private fun Scrubber(
         animationSpec = tween(if (visible) 120 else 500, delayMillis = if (visible) 0 else 700),
         label = "scrubber",
     )
-    if (alpha == 0f) return
+    // Faded out, never removed. A handle that only exists while the list is
+    // already moving is a handle you cannot reach for: the first touch would
+    // land on nothing, scroll the list the ordinary way, and only then bring
+    // the thing you were aiming at into existence. Transparency does not stop
+    // it receiving touches.
 
     Box(
         modifier
@@ -279,11 +284,20 @@ private fun Scrubber(
                         .padding(end = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    // On its own pill: a bare label sits on top of whatever
+                    // photo happens to be behind it, and half of them landed on
+                    // a bright sky.
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
+                        shape = RoundedCornerShape(50),
+                    ) {
+                        Text(
+                            label,
+                            Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Spacer(Modifier.width(6.dp))
                     Box(
                         Modifier
