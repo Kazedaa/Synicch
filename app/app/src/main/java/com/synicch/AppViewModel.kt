@@ -260,6 +260,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * is undone as well - a cancelled delete has to mean nothing happened.
      */
     fun moveToTrash(ids: List<Long>, reason: String? = null) = viewModelScope.launch {
+        // Resolved before anything else happens. Trashing removes these from
+        // the server's active list, so the sync that follows drops them from
+        // the local-file map too - looking the phone's copies up afterwards
+        // found nothing, and the delete silently did half its job.
+        val uris = ids.mapNotNull { repo.localUris.value[it] }
+
         val serverIds = ids.filter { it > 0 }
         if (serverIds.isNotEmpty()) {
             withContext(Dispatchers.IO) { repo.api.moveToTrash(serverIds) }
@@ -267,8 +273,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         reason?.let { loadCleanupGroup(it) }
         repo.sync()
         refreshAll()
-
-        val uris = ids.mapNotNull { repo.localUris.value[it] }
 
         if (uris.isEmpty()) {
             _toast.value = "Moved ${serverIds.size} to trash"
