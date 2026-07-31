@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.IntentSenderRequest
@@ -203,6 +204,19 @@ private fun Paired(vm: AppViewModel) {
         val unsaved = targets.filter { it.localOnly }
         if (unsaved.isEmpty()) vm.moveToTrash(targets.map { it.id })
         else confirmDelete = targets
+    }
+
+    // Navigation is plain state rather than a nav graph, so the system back
+    // button has to be told about it. Without this, backing out of the viewer
+    // or the trash left the app entirely.
+    BackHandler(enabled = screen !is Screen.Main || selection.isNotEmpty()) {
+        val here = screen
+        when {
+            selection.isNotEmpty() -> selection = emptySet()
+            here is Screen.TrashViewer -> screen = Screen.Trash
+            here is Screen.AlbumAdd -> screen = Screen.AlbumDetail(here.album)
+            else -> screen = Screen.Main
+        }
     }
 
     val thumbFor: (MediaItem) -> Any = { vm.repo.sourceFor(it, full = false) }
