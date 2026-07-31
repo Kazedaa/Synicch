@@ -92,7 +92,7 @@ fun Viewer(
     onShare: (MediaItem) -> Unit,
     onDownload: (MediaItem) -> Unit,
     /** Trash browses the same way; only what the bottom bar offers differs. */
-    showActions: Boolean = true,
+    mode: ViewerMode = ViewerMode.LIBRARY,
     onRestore: (MediaItem) -> Unit = {},
     onDeleteForever: (MediaItem) -> Unit = {},
 ) {
@@ -197,7 +197,7 @@ fun Viewer(
                     Modifier.fillMaxWidth().navigationBarsPadding().padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                 ) {
-                    if (false) {
+                    if (mode == ViewerMode.TRASH) {
                         ViewerAction(Icons.Default.RestoreFromTrash, "Restore") {
                             onRestore(current)
                         }
@@ -456,6 +456,9 @@ private fun ViewerAction(icon: androidx.compose.ui.graphics.vector.ImageVector,
              maxLines = 1)
     }
 }
+
+/** What the viewer is looking at, which decides what it can do about it. */
+enum class ViewerMode { LIBRARY, TRASH }
 
 /**
  * One photo, zoomable.
