@@ -221,6 +221,12 @@ private fun Paired(vm: AppViewModel) {
 
     val thumbFor: (MediaItem) -> Any = { vm.repo.sourceFor(it, full = false) }
 
+    // One root, and every screen a branch inside it rather than an early
+    // return. The returns meant anything declared after them - the album
+    // picker, the snackbar - simply did not exist while the viewer was open:
+    // tapping "Album" set the state and nothing appeared until you had backed
+    // all the way out to the timeline.
+    Box(Modifier.fillMaxSize()) {
     when (val s = screen) {
         is Screen.Viewer -> {
             Viewer(
@@ -240,7 +246,6 @@ private fun Paired(vm: AppViewModel) {
                 onShare = { shareNow(listOf(it)) },
                 onDownload = { vm.download(listOf(it)) },
             )
-            return
         }
 
         is Screen.AlbumAdd -> {
@@ -481,11 +486,10 @@ private fun Paired(vm: AppViewModel) {
         )
     }
 
-    Box(Modifier.fillMaxSize()) {
-        SnackbarHost(
-            snackbar,
-            Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
-        )
+    SnackbarHost(
+        snackbar,
+        Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
+    )
     }
 
     albumPicker?.let { ids ->
