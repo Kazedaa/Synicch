@@ -431,16 +431,25 @@ private fun trimNumber(v: Double, decimals: Int = 1): String =
 @Composable
 private fun ViewerAction(icon: androidx.compose.ui.graphics.vector.ImageVector,
                          label: String, onClick: () -> Unit) {
+    val interactions = remember { MutableInteractionSource() }
+    val pressed by interactions.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.86f else 1f,
+        animationSpec = tween(90),
+        label = "actionPress",
+    )
+
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .clip(RoundedCornerShape(14.dp))
             .clickable(
-                interactionSource = MutableInteractionSource(),
-                indication = null,
+                interactionSource = interactions,
+                indication = ripple(color = Color.White),
                 onClick = onClick,
             )
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale },
     ) {
         Icon(icon, label, tint = Color.White)
         Text(label, color = Color.White, style = MaterialTheme.typography.labelSmall,
