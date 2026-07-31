@@ -477,12 +477,12 @@ private fun Paired(vm: AppViewModel) {
         }
     }
 
+    // Slow work says so with a hairline at the top of the screen rather than a
+    // dialog. A modal that blocks the app to announce a download is a modal
+    // that exists for the app's benefit, not the reader's.
     if (working != null) {
-        AlertDialog(
-            onDismissRequest = { },
-            title = { Text(working ?: "") },
-            text = { CircularProgressIndicator() },
-            confirmButton = { },
+        LinearProgressIndicator(
+            Modifier.fillMaxWidth().align(Alignment.TopCenter).statusBarsPadding(),
         )
     }
 
