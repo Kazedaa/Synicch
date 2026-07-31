@@ -265,6 +265,110 @@ class Repo(private val context: Context) {
 
     fun playbackUrl(item: MediaItem): Any = originalFor(item)
 
+    // -------------------------------------------------- getting files back --
+
+    /**
+     * Write a photo the server holds back onto the phone.
+     *
+     * Lands in `DCIM/Restored` rather than `DCIM/Camera`: Camera is the folder
+     * Syncthing watches, and putting a file the server already holds back into
+     * the folder that syncs to the server is a round trip with nothing at the
+     * end of it.
+     *
+     * Written with IS_PENDING set, so a half-downloaded file is invisible to
+     * every other gallery app until it is complete.
+     */
+    suspend fun download(item: MediaItem): Uri? = withContext(Dispatchers.IO) {
+        if (item.localOnly) return@withContext null
+
+        val collection =
+            if (item.isVideo) MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, item.name)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeOf(item))
+            put(MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Restored")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = context.contentResolver.insert(collection, values)
+            ?: return@withContext null
+
+        val ok = runCatching {
+            context.contentResolver.openOutputStream(uri)!!.use { out ->
+                api.downloadOriginal(item.id, out).getOrThrow()
+            }
+        }.isSuccess
+
+        if (!ok) {
+            // Leaving a zero-byte entry in the gallery would be worse than the
+            // failure itself.
+            runCatching { context.contentResolver.delete(uri, null, null) }
+            return@withContext null
+        }
+
+        context.contentResolver.update(uri, ContentValues().apply {
+            put(MediaStore.MediaColumns.IS_PENDING, 0)
+        }, null, null)
+
+        refreshLocal()
+        uri
+    }
+
+    /**
+     * A uri another app can read, for sharing.
+     *
+     * The phone's own copy when there is one. Otherwise the bytes are staged in
+     * this app's cache and handed over through a FileProvider, which grants
+     * read access to that one file for that one share - the photo does not have
+     * to be downloaded into the gallery just to send it to someone.
+     */
+    suspend fun shareUri(item: MediaItem): Uri? = withContext(Dispatchers.IO) {
+        _localUris.value[item.id]?.let { return@withContext it }
+        if (item.localOnly) return@withContext null
+
+        val dir = java.io.File(context.cacheDir, "share").apply { mkdirs() }
+        val file = java.io.File(dir, item.name.ifBlank { "synicch-${item.id}" })
+        if (!file.exists() || file.length() != item.size) {
+            val ok = runCatching {
+                file.outputStream().use { out ->
+                    api.downloadOriginal(item.id, out).getOrThrow()
+                }
+            }.isSuccess
+            if (!ok) { file.delete(); return@withContext null }
+        }
+        runCatching {
+            androidx.core.content.FileProvider.getUriForFile(
+                context, "${context.packageName}.files", file)
+        }.getOrNull()
+    }
+
+    fun mimeOf(item: MediaItem): String {
+        val ext = item.name.substringAfterLast('.', "").lowercase()
+        return when {
+            item.isVideo && ext == "mp4" -> "video/mp4"
+            item.isVideo -> "video/*"
+            ext == "png" -> "image/png"
+            ext == "webp" -> "image/webp"
+            ext == "heic" || ext == "heif" -> "image/heif"
+            else -> "image/jpeg"
+        }
+    }
+
+    /** Staged share copies are disposable; clear them when the app starts. */
+    fun clearShareCache() {
+        runCatching { java.io.File(context.cacheDir, "share").deleteRecursively() }
+    }
+
+    // ------------------------------------------------------ deleting local --
+
+    /**
+     * Ask Android to delete originals from the phone.
+     *
+     * Deliberately routed through MediaStore's own delete request rather than
+     * touching files: the OS shows its own confirmation dialog listing what is
+     * about to go, which is a second confirmation this app cannot bypass.
+     */
     fun deleteRequest(uris: List<Uri>): IntentSender? = runCatching {
         MediaStore.createDeleteRequest(context.contentResolver, uris).intentSender
     }.getOrNull()

@@ -226,6 +226,33 @@ class Api(private val context: Context) {
 
     fun triggerScan(): Result<Unit> = callOk("/api/scan") { it.post(body("{}")).build() }
 
+    /**
+     * Stream a file's original bytes into [sink].
+     *
+     * Its own loop rather than [attempt], which parses a whole response body
+     * into a String - fine for JSON, ruinous for a 40MB video.
+     */
+    fun downloadOriginal(id: Long, sink: java.io.OutputStream): Result<Long> {
+        var last: Throwable = IllegalStateException("no server address configured")
+        for (base in candidates()) {
+            try {
+                client.newCall(req(base, "/api/media/$id/original", emptyMap()).build())
+                    .execute().use { resp ->
+                        if (!resp.isSuccessful) {
+                            working = base
+                            return Result.failure(IllegalStateException("HTTP ${resp.code}"))
+                        }
+                        val copied = resp.body!!.byteStream().use { it.copyTo(sink) }
+                        working = base
+                        return Result.success(copied)
+                    }
+            } catch (e: Throwable) {
+                last = e
+            }
+        }
+        return Result.failure(last)
+    }
+
     /** Unauthenticated: lets the app check reachability before pairing. */
     fun ping(testUrl: String): Boolean = runCatching {
         client.newCall(Request.Builder().url("${testUrl.trimEnd('/')}/api/ping").build())

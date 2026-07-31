@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!--
+        Only the share staging directory is exposed, and only to whichever app
+        the user picked from the share sheet. Nothing else in the app's storage
+        is reachable through this provider.
+    -->
+    <cache-path name="shared" path="share/" />
+</paths>

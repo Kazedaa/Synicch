@@ -325,6 +325,56 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------ getting files back --
 
+    fun download(items: List<MediaItem>) = viewModelScope.launch {
+        val wanted = items.filter { !it.localOnly && repo.localUris.value[it.id] == null }
+        if (wanted.isEmpty()) {
+            _toast.value = "Already on this phone"
+            return@launch
+        }
+        var done = 0
+        wanted.forEachIndexed { i, item ->
+            _working.value =
+                if (wanted.size == 1) "Downloading ${item.name}"
+                else "Downloading ${i + 1} of ${wanted.size}"
+            if (repo.download(item) != null) done++
+        }
+        _working.value = null
+        _toast.value =
+            if (done == wanted.size) "Saved $done back to your camera roll"
+            else "Saved $done of ${wanted.size} - the rest could not be fetched"
+    }
+
+    /**
+     * Hand files to another app.
+     *
+     * Anything the phone already holds is shared straight from the camera roll.
+     * Anything it does not is fetched into a staging directory first, so a photo
+     * that only lives on the server can still be sent without downloading it
+     * into the gallery.
+     */
+    fun share(items: List<MediaItem>, onReady: (List<Uri>, String) -> Unit) =
+        viewModelScope.launch {
+            if (items.isEmpty()) return@launch
+            val needsFetch = items.count {
+                repo.localUris.value[it.id] == null && !it.localOnly
+            }
+            if (needsFetch > 0) _working.value = "Fetching $needsFetch from the server"
+
+            val uris = items.mapNotNull { repo.shareUri(it) }
+            _working.value = null
+
+            if (uris.isEmpty()) {
+                _toast.value = "Could not prepare that for sharing"
+                return@launch
+            }
+            if (uris.size < items.size) {
+                _toast.value = "Sharing ${uris.size} of ${items.size}"
+            }
+            val mime = items.map { repo.mimeOf(it) }.distinct()
+                .singleOrNull() ?: if (items.all { it.isVideo }) "video/*" else "*/*"
+            onReady(uris, mime)
+        }
+
     fun phoneDeleteDone() {
         _pendingPhoneDelete.value = emptyList()
         trashedForPhoneDelete = emptyList()
