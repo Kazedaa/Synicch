@@ -637,21 +637,46 @@ private fun AlbumPickerDialog(
     onPick: (Album) -> Unit,
     onCreateNew: (String) -> Unit,
 ) {
+    var query by remember { mutableStateOf("") }
+    val matches = remember(albums, query) {
+        if (query.isBlank()) albums
+        else albums.filter { it.name.contains(query.trim(), ignoreCase = true) }
+    }
+    val exact = albums.any { it.name.equals(query.trim(), ignoreCase = true) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add to album") },
         text = {
             Column {
-                if (albums.isEmpty()) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text("Search albums") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton({ query = "" }) {
+                                Icon(Icons.Default.Close, "Clear")
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+
+                if (matches.isEmpty()) {
                     Text(
-                        "No albums yet.",
+                        if (albums.isEmpty()) "No albums yet."
+                        else "Nothing matches \"${query.trim()}\".",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 12.dp),
                     )
                 } else {
                     LazyColumn(Modifier.heightIn(max = 280.dp)) {
-                        items(albums, key = { it.id }) { album ->
+                        items(matches, key = { it.id }) { album ->
                             ListItem(
                                 headlineContent = { Text(album.name) },
                                 supportingContent = { Text("${album.count} photos") },
@@ -671,9 +696,10 @@ private fun AlbumPickerDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onCreateNew("") },
+                onClick = { onCreateNew(query.trim()) },
+                enabled = query.isBlank() || !exact,
             ) {
-                Text("New album")
+                Text(if (query.isBlank()) "New album" else "Create \"${query.trim()}\"")
             }
         },
         dismissButton = { TextButton(onDismiss) { Text("Cancel") } },
