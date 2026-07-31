@@ -196,6 +196,161 @@ private val THUMB_HEIGHT = 44.dp
  * It stays out of the way - invisible until the list moves, gone again a moment
  * after it stops.
  */
+@Composable
+private fun Scrubber(
+    listState: LazyListState,
+    entries: List<Grid.Entry>,
+    metrics: TimelineMetrics,
+    modifier: Modifier = Modifier,
+) {
+    if (entries.size < 2) return
+
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    var dragging by remember { mutableStateOf(false) }
+    var trackPx by remember { mutableFloatStateOf(0f) }
+
+    val scrollable = metrics.total.coerceAtLeast(1f)
+
+    // The list index is one ahead of the entry index: the header slot sits at 0.
+    val firstEntry = (listState.firstVisibleItemIndex - 1).coerceIn(0, entries.lastIndex)
+    val scrolled = metrics.starts[firstEntry] + listState.firstVisibleItemScrollOffset
+    val fraction = (scrolled / scrollable).coerceIn(0f, 1f)
+
+    /**
+     * Months that have photos, kept as scroll offsets rather than fractions.
+     *
+     * They are turned into positions with the same divisor the handle uses, so
+     * that dragging the handle onto a label lands on that month. Dividing by the
+     * content height instead would put every label slightly low, and the last
+     * month or two somewhere the handle cannot reach at all.
+     */
+    val marks = remember(entries, metrics) {
+        val out = ArrayList<Pair<Float, String>>()
+        var last: String? = null
+        entries.forEachIndexed { i, e ->
+            if (e is Grid.Entry.Header) {
+                val month = e.section.take(7)
+                if (month != last) {
+                    last = month
+                    out.add(metrics.starts[i] to Grid.shortMonth(month))
+                }
+            }
+        }
+        out
+    }
+
+    fun jumpTo(y: Float) {
+        val target = ((y / trackPx).coerceIn(0f, 1f) * scrollable)
+        var i = metrics.starts.indexOfFirst { it > target } - 1
+        if (i < 0) i = metrics.starts.lastIndex
+        val within = (target - metrics.starts[i]).toInt().coerceAtLeast(0)
+        scope.launch { listState.scrollToItem(i + 1, within) }
+    }
+
+    val visible = dragging || listState.isScrollInProgress
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(if (visible) 120 else 500, delayMillis = if (visible) 0 else 700),
+        label = "scrubber",
+    )
+    if (alpha == 0f) return
+
+    Box(
+        modifier
+            .fillMaxHeight()
+            .width(TRACK_WIDTH)
+            .graphicsLayer { this.alpha = alpha }
+            .onSizeChanged { trackPx = (it.height - with(density) { THUMB_HEIGHT.toPx() })
+                .coerceAtLeast(1f) }
+    ) {
+        // Month ticks. Thinned out as they crowd, because a column of unreadable
+        // labels is worse than fewer readable ones.
+        val minGap = with(density) { 30.dp.toPx() }
+        var lastY = -minGap
+        marks.forEach { (offset, label) ->
+            val y = (offset / scrollable).coerceIn(0f, 1f) * trackPx
+            if (y - lastY >= minGap) {
+                lastY = y
+                Row(
+                    Modifier
+                        .offset(y = with(density) { y.toDp() })
+                        .align(Alignment.TopEnd)
+                        .padding(end = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Box(
+                        Modifier
+                            .size(width = 9.dp, height = 2.dp)
+                            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    )
+                }
+            }
+        }
+
+        // The handle, and - while it is being held - what it is pointing at.
+        Row(
+            Modifier
+                .offset(y = with(density) { (fraction * trackPx).toDp() })
+                .align(Alignment.TopEnd),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (dragging) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary,
+                    shape = RoundedCornerShape(50),
+                    shadowElevation = 3.dp,
+                ) {
+                    Text(
+                        currentSection(entries, firstEntry),
+                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+            }
+            Surface(
+                color = if (dragging) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp),
+                shadowElevation = 2.dp,
+                modifier = Modifier.height(THUMB_HEIGHT).width(28.dp),
+            ) {
+                Icon(
+                    Icons.Default.DragHandle, "Scroll by date",
+                    Modifier.padding(4.dp),
+                    tint = if (dragging) MaterialTheme.colorScheme.onPrimary
+                           else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        // The only part that takes touches. Anywhere else in this column is a
+        // photo, and dragging there should scroll the list as it always did.
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .width(GRAB_WIDTH)
+                .fillMaxHeight()
+                .pointerInput(metrics) {
+                    detectDragGestures(
+                        onDragStart = { start -> dragging = true; jumpTo(start.y) },
+                        onDragEnd = { dragging = false },
+                        onDragCancel = { dragging = false },
+                    ) { change, _ -> jumpTo(change.position.y) }
+                }
+        )
+    }
+}
+
+/** The month heading covering a given entry, searching upwards from it. */
 private fun currentSection(entries: List<Grid.Entry>, index: Int): String {
     for (i in index downTo 0) {
         val e = entries[i]

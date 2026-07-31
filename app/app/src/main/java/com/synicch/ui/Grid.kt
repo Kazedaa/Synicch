@@ -90,6 +90,16 @@ object Grid {
     private val MONTHS = arrayOf("January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December")
 
+    private val SHORT = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+    /** "2026-07-31" or "2026-07" -> "Jul 2026". For the scroll bar's labels. */
+    fun shortMonth(sectionKey: String): String = runCatching {
+        val parts = sectionKey.split("-")
+        if (parts.size < 2) parts[0]
+        else "${SHORT[parts[1].toInt() - 1]} ${parts[0]}"
+    }.getOrDefault(sectionKey)
+
     fun prettySection(key: String): String = when (key.length) {
         10 -> runCatching {
             val (y, m, d) = key.split("-")
