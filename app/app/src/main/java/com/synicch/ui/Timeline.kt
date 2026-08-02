@@ -52,6 +52,13 @@ fun Timeline(
     onSelectSection: (List<Long>) -> Unit = {},
     /** Picker mode: a tap picks rather than opens, and the day handles are up. */
     picking: Boolean = false,
+    /**
+     * Bumped to ask for the top of the list.
+     *
+     * A counter rather than a boolean, so two requests in a row are two
+     * separate events and nothing has to be reset afterwards.
+     */
+    scrollToTop: Int = 0,
     header: @Composable () -> Unit = {},
 ) {
     val selecting = picking || selection.isNotEmpty()
@@ -115,6 +122,18 @@ fun Timeline(
      * when you are reading halfway down the timeline, so this only pulls back
      * up when you were already at the top.
      */
+    // Which request has already been honoured. Saved alongside the position,
+    // because coming back to a screen re-runs its effects: without this, every
+    // return from the viewer would look like a fresh request for the top and
+    // undo the position that was just restored.
+    var handledTop by rememberSaveable { mutableIntStateOf(scrollToTop) }
+    LaunchedEffect(scrollToTop) {
+        if (scrollToTop != handledTop) {
+            handledTop = scrollToTop
+            listState.animateScrollToItem(0)
+        }
+    }
+
     val newestKey = entries.firstOrNull()?.keyOf()
     LaunchedEffect(newestKey) {
         if (newestKey != null && listState.firstVisibleItemIndex <= 3) {

@@ -6,12 +6,14 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,11 +35,23 @@ fun AlbumsScreen(
     onCreate: () -> Unit,
     onToggleRecording: (Album) -> Unit,
     onDelete: (Album) -> Unit,
+    /** Bumped to ask for the top of the list. See Timeline. */
+    scrollToTop: Int = 0,
 ) {
     var confirmDelete by remember { mutableStateOf<Album?>(null) }
+    val gridState = rememberLazyGridState()
+
+    var handledTop by rememberSaveable { mutableIntStateOf(scrollToTop) }
+    LaunchedEffect(scrollToTop) {
+        if (scrollToTop != handledTop) {
+            handledTop = scrollToTop
+            gridState.animateScrollToItem(0)
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
         LazyVerticalGrid(
+            state = gridState,
             columns = GridCells.Fixed(2),
             contentPadding = PaddingValues(12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),

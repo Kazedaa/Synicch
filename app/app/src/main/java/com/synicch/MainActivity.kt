@@ -122,6 +122,10 @@ private fun Paired(vm: AppViewModel) {
     var albumPicker by remember { mutableStateOf<List<Long>?>(null) }
     var newAlbumFor by remember { mutableStateOf<List<Long>?>(null) }
     var renaming by remember { mutableStateOf<Album?>(null) }
+    // Tapping the tab you are already on, or an album's title, means
+    // "take me back to the top" -- the shortest way out of a long scroll.
+    var timelineTop by remember { mutableIntStateOf(0) }
+    var albumsTop by remember { mutableIntStateOf(0) }
 
     val items by vm.items.collectAsStateWithLifecycle()
     val albums by vm.albums.collectAsStateWithLifecycle()
@@ -406,7 +410,12 @@ private fun Paired(vm: AppViewModel) {
                         val here = (screen as? Screen.AlbumDetail)?.album
                             ?.let { nav -> albums.firstOrNull { it.id == nav.id } ?: nav }
                         TopAppBar(
-                            title = { Text(here?.name ?: "Unsorted") },
+                            title = {
+                                Text(
+                                    here?.name ?: "Unsorted",
+                                    modifier = Modifier.clickable { timelineTop++ },
+                                )
+                            },
                             navigationIcon = {
                                 IconButton({ screen = Screen.Main }) {
                                     Icon(Icons.Default.ArrowBack, "Back")
@@ -438,7 +447,14 @@ private fun Paired(vm: AppViewModel) {
                             Tab.entries.forEach { t ->
                                 NavigationBarItem(
                                     selected = tab == t,
-                                    onClick = { tab = t },
+                                    onClick = {
+                                        if (tab != t) tab = t
+                                        else when (t) {
+                                            Tab.PHOTOS -> timelineTop++
+                                            Tab.ALBUMS -> albumsTop++
+                                            else -> Unit
+                                        }
+                                    },
                                     icon = { Icon(t.icon, t.label) },
                                     label = { Text(t.label) },
                                 )
@@ -468,6 +484,7 @@ private fun Paired(vm: AppViewModel) {
                                 selection = if (ids.all { it in selection }) selection - ids.toSet()
                                             else selection + ids
                             },
+                            scrollToTop = timelineTop,
                             header = {
                                 if (!subScreen) {
                                     albums.firstOrNull { it.recording }?.let { rec ->
@@ -499,6 +516,7 @@ private fun Paired(vm: AppViewModel) {
                             onCreate = { newAlbumFor = emptyList() },
                             onToggleRecording = { vm.toggleRecording(it) },
                             onDelete = { vm.deleteAlbum(it.id) },
+                            scrollToTop = albumsTop,
                         )
 
                         Tab.CLEANUP -> CleanupScreen(
