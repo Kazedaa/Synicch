@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -221,6 +222,13 @@ private fun Paired(vm: AppViewModel) {
 
     val thumbFor: (MediaItem) -> Any = { vm.repo.sourceFor(it, full = false) }
 
+    // Where each list had got to. A LazyColumn's position belongs to the
+    // composable that owns it, and opening a photo takes the whole timeline out
+    // of the tree -- so without somewhere to park it, coming back from the
+    // viewer dropped you at the top of two years of photos. Keyed per screen,
+    // so an album and the main timeline do not share one position.
+    val listPositions = rememberSaveableStateHolder()
+
     // One root, and every screen a branch inside it rather than an early
     // return. The returns meant anything declared after them - the album
     // picker, the snackbar - simply did not exist while the viewer was open:
@@ -327,13 +335,22 @@ private fun Paired(vm: AppViewModel) {
         }
 
         else -> {
-            val visible: List<MediaItem> = when (val s = screen) {
-                is Screen.AlbumDetail -> items.filter { s.album.id in it.albums }
+            val visible: List<MediaItem> = when (val cur = screen) {
+                is Screen.AlbumDetail -> items.filter { cur.album.id in it.albums }
                 is Screen.Unsorted -> items.filter { it.albums.isEmpty() }
                 else -> items
             }
             val subScreen = screen !is Screen.Main
 
+            // One saved position per list, not one for "the timeline": going
+            // back from an album should not move where the main timeline was.
+            val positionKey = when (val cur = screen) {
+                is Screen.AlbumDetail -> "album-${cur.album.id}"
+                is Screen.Unsorted -> "unsorted"
+                else -> "tab-${tab.name}"
+            }
+
+            listPositions.SaveableStateProvider(positionKey) {
             Scaffold(
                 topBar = {
                     if (selection.isNotEmpty()) {
@@ -473,6 +490,7 @@ private fun Paired(vm: AppViewModel) {
                         else -> Unit
                     }
                 }
+            }
             }
         }
     }

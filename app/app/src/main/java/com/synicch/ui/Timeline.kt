@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,10 +55,17 @@ fun Timeline(
     header: @Composable () -> Unit = {},
 ) {
     val selecting = picking || selection.isNotEmpty()
-    var zoom by remember { mutableStateOf(Grid.Zoom.DAY) }
+    // Saved, not merely remembered. Restoring where the list was got as far as
+    // handing back the right index and then threw it away: the width is only
+    // known once the layout has measured, so on the way back in `entries` was
+    // empty for one composition, the LazyColumn had nothing but its header and
+    // footer, and an index of four hundred was clamped to zero before the real
+    // content existed. Keeping the width and the zoom level means the rows are
+    // already there on the first pass, and the index still means something.
+    var zoom by rememberSaveable { mutableStateOf(Grid.Zoom.DAY) }
+    var widthPx by rememberSaveable { mutableFloatStateOf(0f) }
     val listState = rememberLazyListState()
     val density = LocalDensity.current
-    var widthPx by remember { mutableFloatStateOf(0f) }
 
     // Recomputed only when the inputs actually change; at 25k photos this is
     // far too expensive to redo on every recomposition.
