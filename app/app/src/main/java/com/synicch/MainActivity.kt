@@ -249,6 +249,9 @@ private fun Paired(vm: AppViewModel) {
                 localFor = { vm.repo.local.info(it) },
                 coverFor = { album -> album.cover?.let { vm.repo.api.thumbUrl(it) } },
                 onOpenAlbum = { album -> screen = Screen.AlbumDetail(album) },
+                onRemoveFromAlbum = { item, album ->
+                    vm.removeFromAlbum(album.id, listOf(item.id))
+                },
                 onClose = { screen = Screen.Main },
                 onDelete = { requestDelete(listOf(it)); screen = Screen.Main },
                 onAddToAlbum = { albumPicker = listOf(it.id) },
@@ -309,6 +312,7 @@ private fun Paired(vm: AppViewModel) {
                 localFor = { null },
                 coverFor = { null },
                 onOpenAlbum = { },
+                onRemoveFromAlbum = { _, _ -> },
                 onClose = { screen = Screen.Trash },
                 onDelete = { },
                 onAddToAlbum = { },

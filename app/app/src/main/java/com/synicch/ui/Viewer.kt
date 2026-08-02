@@ -86,6 +86,7 @@ fun Viewer(
     localFor: (MediaItem) -> LocalMedia.Local?,
     coverFor: (Album) -> Any?,
     onOpenAlbum: (Album) -> Unit,
+    onRemoveFromAlbum: (MediaItem, Album) -> Unit,
     onClose: () -> Unit,
     onDelete: (MediaItem) -> Unit,
     onAddToAlbum: (MediaItem) -> Unit,
@@ -237,7 +238,7 @@ fun Viewer(
             scrimColor = Color.Transparent,
         ) {
             MediaDetails(current, albumsFor(current), localFor(current), coverFor,
-                         onOpenAlbum)
+                         onOpenAlbum, onRemoveFromAlbum)
         }
     }
 }
@@ -260,6 +261,7 @@ private fun MediaDetails(
     local: LocalMedia.Local?,
     coverFor: (Album) -> Any?,
     onOpenAlbum: (Album) -> Unit,
+    onRemoveFromAlbum: (MediaItem, Album) -> Unit,
 ) {
     Column(
         Modifier
@@ -299,11 +301,22 @@ private fun MediaDetails(
                             .background(MaterialTheme.colorScheme.surfaceVariant))
                     }
                     Spacer(Modifier.width(14.dp))
-                    Column {
+                    Column(Modifier.weight(1f)) {
                         Text(album.name, style = MaterialTheme.typography.bodyMedium)
                         Text("${album.count} items",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    // Filing something in the wrong album is easy and undoing it
+                    // meant going to the album and hunting for the photo there.
+                    // No confirmation: this unfiles, it does not delete, and the
+                    // album picker two taps away puts it straight back.
+                    IconButton({ onRemoveFromAlbum(item, album) }) {
+                        Icon(
+                            Icons.Default.RemoveCircleOutline,
+                            "Remove from ${album.name}",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }
