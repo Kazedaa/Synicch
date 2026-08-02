@@ -472,15 +472,56 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             pendingDelete.size, verified.freed, verified.rejected.size)
     }
 
+    /**
+     * Free-up deletes in batches, because one request cannot carry them all.
+     *
+     * Each batch is its own system confirmation. Stopping half way is a real
+     * outcome rather than an error -- what has already gone is gone, and the
+     * count says so instead of claiming nothing happened.
+     */
+    private var deleteBatches: List<List<Uri>> = emptyList()
+    private var deleteBatchAt = 0
+    private var deletedSoFar = 0
+
+    fun beginFreeUpDelete(): List<Uri>? {
+        deleteBatches = pendingDelete.chunked(repo.deleteBatch)
+        deleteBatchAt = 0
+        deletedSoFar = 0
+        return nextFreeUpBatch()
+    }
+
+    fun nextFreeUpBatch(): List<Uri>? =
+        deleteBatches.getOrNull(deleteBatchAt++)
+
+    /** A batch came back approved; count it before asking for the next. */
+    fun freeUpBatchDone() {
+        deletedSoFar += deleteBatches.getOrNull(deleteBatchAt - 1)?.size ?: 0
+    }
+
+    fun freeUpFailed(reason: String) {
+        _freeUp.value = FreeUpState.Blocked(reason)
+        pendingDelete = emptyList()
+        deleteBatches = emptyList()
+    }
+
     fun freeUpDeleted() {
-        _freeUp.value = FreeUpState.Done(pendingDelete.size, pendingBytes)
+        // What actually left the phone, which after a part-way stop is not
+        // the same as what was offered.
+        val share =
+            if (pendingDelete.isEmpty()) 0L
+            else pendingBytes * deletedSoFar / pendingDelete.size
+        _freeUp.value = FreeUpState.Done(deletedSoFar, share)
         pendingDelete = emptyList()
         refreshLocal()
     }
 
     fun freeUpCancelled() {
-        _freeUp.value = FreeUpState.Idle
+        // Backing out of the third confirmation does not put the first two
+        // batches back. Say what went rather than implying nothing did.
+        if (deletedSoFar > 0) freeUpDeleted()
+        else _freeUp.value = FreeUpState.Idle
         pendingDelete = emptyList()
+        deleteBatches = emptyList()
     }
 
     fun resetFreeUp() { _freeUp.value = FreeUpState.Idle }

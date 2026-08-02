@@ -2,6 +2,7 @@ package com.synicch
 
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -149,11 +150,26 @@ private fun Paired(vm: AppViewModel) {
     // Android shows its own confirmation before letting a third-party app delete
     // media it did not create. That dialog cannot be bypassed, which is exactly
     // right for the most dangerous action in the app.
+    // Free-up goes out in batches, so this fires once per batch: count the one
+    // that just came back, then ask for the next until there are none left.
+    lateinit var runFreeUpBatch: (List<Uri>) -> Unit
     val deleteLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) vm.freeUpDeleted()
-        else vm.freeUpCancelled()
+        if (result.resultCode != Activity.RESULT_OK) {
+            vm.freeUpCancelled()
+        } else {
+            vm.freeUpBatchDone()
+            val next = vm.nextFreeUpBatch()
+            if (next == null) vm.freeUpDeleted() else runFreeUpBatch(next)
+        }
+    }
+    runFreeUpBatch = { batch ->
+        vm.repo.deleteRequest(batch).fold(
+            onSuccess = { deleteLauncher.launch(IntentSenderRequest.Builder(it).build()) },
+            // Previously this returned null and the button did nothing at all.
+            onFailure = { vm.freeUpFailed("Could not ask Android to delete these: ${it.message}") },
+        )
     }
 
     // The phone half of an ordinary delete. Separate launcher from the one
@@ -168,7 +184,7 @@ private fun Paired(vm: AppViewModel) {
     val pendingPhoneDelete by vm.pendingPhoneDelete.collectAsStateWithLifecycle()
     LaunchedEffect(pendingPhoneDelete) {
         if (pendingPhoneDelete.isEmpty()) return@LaunchedEffect
-        val sender = vm.repo.deleteRequest(pendingPhoneDelete)
+        val sender = vm.repo.deleteRequest(pendingPhoneDelete).getOrNull()
         if (sender == null) vm.phoneDeleteCancelled()
         else trashDeleteLauncher.launch(IntentSenderRequest.Builder(sender).build())
     }
@@ -341,9 +357,9 @@ private fun Paired(vm: AppViewModel) {
                 onBack = { vm.resetFreeUp(); screen = Screen.Main },
                 onStart = { vm.startFreeUp() },
                 onConfirm = {
-                    vm.repo.deleteRequest(vm.pendingDelete)?.let {
-                        deleteLauncher.launch(IntentSenderRequest.Builder(it).build())
-                    }
+                    val first = vm.beginFreeUpDelete()
+                    if (first == null) vm.freeUpFailed("Nothing left to delete.")
+                    else runFreeUpBatch(first)
                 },
             )
         }

@@ -370,7 +370,18 @@ class Repo(private val context: Context) {
      * touching files: the OS shows its own confirmation dialog listing what is
      * about to go, which is a second confirmation this app cannot bypass.
      */
-    fun deleteRequest(uris: List<Uri>): IntentSender? = runCatching {
+    /**
+     * The most a single delete request may carry.
+     *
+     * MediaStore refuses outright past a documented limit -- "URI list
+     * restricted to 2000 per request" -- and a library of any size clears that
+     * easily. Half the cap leaves room without turning a bulk delete into a
+     * long queue of confirmations, since Android asks once per request.
+     */
+    val deleteBatch: Int get() = 1000
+
+    fun deleteRequest(uris: List<Uri>): Result<IntentSender> = runCatching {
+        require(uris.isNotEmpty()) { "nothing to delete" }
         MediaStore.createDeleteRequest(context.contentResolver, uris).intentSender
-    }.getOrNull()
+    }
 }
