@@ -207,6 +207,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _toast.value = "Album deleted. Photos were not touched."
     }
 
+    fun setAlbumCover(albumId: Long, fileId: Long) = viewModelScope.launch {
+        withContext(Dispatchers.IO) { repo.api.setAlbumCover(albumId, fileId) }
+        // Only the album list carries covers, so there is nothing to re-pull
+        // about the photo itself.
+        repo.refreshAlbums()
+        _toast.value = "Album cover set"
+    }
+
     fun renameAlbum(albumId: Long, name: String) = viewModelScope.launch {
         withContext(Dispatchers.IO) { repo.api.renameAlbum(albumId, name) }
         repo.refreshAlbums()

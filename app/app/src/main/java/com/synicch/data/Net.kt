@@ -143,6 +143,10 @@ class Api(private val context: Context) {
     fun renameAlbum(id: Long, name: String): Result<Unit> =
         callOk("/api/albums/$id") { it.patch(body("""{"name":${name.q()}}""")).build() }
 
+    /** Which photo stands for the album. Same PATCH as a rename. */
+    fun setAlbumCover(id: Long, fileId: Long): Result<Unit> =
+        callOk("/api/albums/$id") { it.patch(body("""{"cover":$fileId}""")).build() }
+
     fun deleteAlbum(id: Long): Result<Unit> =
         callOk("/api/albums/$id") { it.delete().build() }
 

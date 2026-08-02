@@ -369,6 +369,19 @@ private fun Paired(vm: AppViewModel) {
                                 }
                             },
                             actions = {
+                                // Only inside an album, and only with one photo
+                                // picked: "use this one" has no meaning for a
+                                // handful of them at once.
+                                val inAlbum = (screen as? Screen.AlbumDetail)?.album
+                                if (inAlbum != null && selection.size == 1) {
+                                    IconButton({
+                                        vm.setAlbumCover(inAlbum.id, selection.first())
+                                        selection = emptySet()
+                                    }) {
+                                        Icon(Icons.Default.Wallpaper,
+                                             "Use as album cover")
+                                    }
+                                }
                                 IconButton({
                                     shareNow(items.filter { it.id in selection })
                                     selection = emptySet()
