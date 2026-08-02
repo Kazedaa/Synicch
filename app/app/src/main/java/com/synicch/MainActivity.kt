@@ -53,7 +53,9 @@ private enum class Tab(
 
 private sealed interface Screen {
     data object Main : Screen
-    data class Viewer(val index: Int, val source: List<MediaItem>) : Screen
+    /** [from] is the screen that opened it, which is where closing returns to. */
+    data class Viewer(val index: Int, val source: List<MediaItem>,
+                      val from: Screen) : Screen
     data class AlbumDetail(val album: Album) : Screen
     data class AlbumAdd(val album: Album) : Screen
     data object Unsorted : Screen
@@ -216,6 +218,7 @@ private fun Paired(vm: AppViewModel) {
         when {
             selection.isNotEmpty() -> selection = emptySet()
             here is Screen.TrashViewer -> screen = Screen.Trash
+            here is Screen.Viewer -> screen = here.from
             here is Screen.AlbumAdd -> screen = Screen.AlbumDetail(here.album)
             else -> screen = Screen.Main
         }
@@ -252,7 +255,7 @@ private fun Paired(vm: AppViewModel) {
                 onRemoveFromAlbum = { item, album ->
                     vm.removeFromAlbum(album.id, listOf(item.id))
                 },
-                onClose = { screen = Screen.Main },
+                onClose = { screen = s.from },
                 onDelete = { requestDelete(listOf(it)); screen = Screen.Main },
                 onAddToAlbum = { albumPicker = listOf(it.id) },
                 onEdit = { },
@@ -452,7 +455,8 @@ private fun Paired(vm: AppViewModel) {
                             localIds = localUris.keys,
                             thumbFor = thumbFor,
                             onOpen = { item ->
-                                screen = Screen.Viewer(visible.indexOf(item), visible)
+                                screen = Screen.Viewer(
+                                    visible.indexOf(item), visible, screen)
                             },
                             onToggleSelect = { item ->
                                 selection = if (item.id in selection) selection - item.id
