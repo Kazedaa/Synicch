@@ -3,8 +3,10 @@ package com.synicch.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -432,24 +434,22 @@ private fun SectionHeader(
     onSelectAll: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp,
+        Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp,
             top = if (zoom == Grid.Zoom.YEAR) 20.dp else 14.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            title,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = if (zoom == Grid.Zoom.YEAR) 20.sp else 15.sp,
-        )
-        Spacer(Modifier.weight(1f))
-        AnimatedVisibility(selecting, enter = fadeIn(), exit = fadeOut()) {
+        // On the left, because the right edge is not free: the scroll bar's
+        // grab strip is a full-height band down that side, and it reads a drag
+        // from the initial pass. A button underneath it never sees the touch --
+        // the day would start scrolling instead of selecting.
+        AnimatedVisibility(
+            selecting,
+            // Expanding rather than only fading, so the title slides across
+            // instead of the control appearing on top of where it starts.
+            enter = fadeIn() + expandHorizontally(),
+            exit = fadeOut() + shrinkHorizontally(),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "$count",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 IconButton(onSelectAll, Modifier.size(34.dp)) {
                     Icon(
                         if (allSelected) Icons.Default.CheckCircle
@@ -460,8 +460,21 @@ private fun SectionHeader(
                                else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                Text(
+                    "$count",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
+        Text(
+            title,
+            Modifier.padding(start = 8.dp),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = if (zoom == Grid.Zoom.YEAR) 20.sp else 15.sp,
+        )
+        Spacer(Modifier.weight(1f))
     }
 }
 
