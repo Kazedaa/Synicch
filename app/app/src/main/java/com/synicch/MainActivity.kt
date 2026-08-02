@@ -119,6 +119,7 @@ private fun Paired(vm: AppViewModel) {
     var selection by remember { mutableStateOf(setOf<Long>()) }
     var albumPicker by remember { mutableStateOf<List<Long>?>(null) }
     var newAlbumFor by remember { mutableStateOf<List<Long>?>(null) }
+    var renaming by remember { mutableStateOf<Album?>(null) }
 
     val items by vm.items.collectAsStateWithLifecycle()
     val albums by vm.albums.collectAsStateWithLifecycle()
@@ -376,12 +377,24 @@ private fun Paired(vm: AppViewModel) {
                             },
                         )
                     } else if (subScreen) {
-                        val title = (screen as? Screen.AlbumDetail)?.album?.name ?: "Unsorted"
+                        // Read the album back out of the live list rather than
+                        // trusting the copy the navigation state is carrying:
+                        // that snapshot was taken when the screen opened, so a
+                        // rename would not show until you backed out and in.
+                        val here = (screen as? Screen.AlbumDetail)?.album
+                            ?.let { nav -> albums.firstOrNull { it.id == nav.id } ?: nav }
                         TopAppBar(
-                            title = { Text(title) },
+                            title = { Text(here?.name ?: "Unsorted") },
                             navigationIcon = {
                                 IconButton({ screen = Screen.Main }) {
                                     Icon(Icons.Default.ArrowBack, "Back")
+                                }
+                            },
+                            actions = {
+                                if (here != null) {
+                                    IconButton({ renaming = here }) {
+                                        Icon(Icons.Default.Edit, "Rename album")
+                                    }
                                 }
                             },
                         )
@@ -567,6 +580,17 @@ private fun Paired(vm: AppViewModel) {
         )
     }
 
+    renaming?.let { album ->
+        RenameAlbumDialog(
+            current = album.name,
+            onDismiss = { renaming = null },
+            onRename = { name ->
+                if (name != album.name) vm.renameAlbum(album.id, name)
+                renaming = null
+            },
+        )
+    }
+
     newAlbumFor?.let { ids ->
         NewAlbumDialog(
             onDismiss = { newAlbumFor = null },
@@ -718,6 +742,38 @@ private fun AlbumPickerDialog(
                 enabled = query.isBlank() || !exact,
             ) {
                 Text(if (query.isBlank()) "New album" else "Create \"${query.trim()}\"")
+            }
+        },
+        dismissButton = { TextButton(onDismiss) { Text("Cancel") } },
+    )
+}
+
+/**
+ * Rename, opened from the album's own screen.
+ *
+ * Starts with the current name selected-in rather than blank: renaming is
+ * usually a correction to what is already there, and a cleared field would mean
+ * retyping a name you only wanted to fix one letter of.
+ */
+@Composable
+private fun RenameAlbumDialog(
+    current: String,
+    onDismiss: () -> Unit,
+    onRename: (String) -> Unit,
+) {
+    var name by remember { mutableStateOf(current) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename album") },
+        text = {
+            OutlinedTextField(
+                value = name, onValueChange = { name = it },
+                label = { Text("Album name") }, singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton({ onRename(name.trim()) }, enabled = name.isNotBlank()) {
+                Text("Rename")
             }
         },
         dismissButton = { TextButton(onDismiss) { Text("Cancel") } },
