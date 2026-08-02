@@ -85,6 +85,7 @@ fun Viewer(
     albumsFor: (MediaItem) -> List<Album>,
     localFor: (MediaItem) -> LocalMedia.Local?,
     coverFor: (Album) -> Any?,
+    onOpenAlbum: (Album) -> Unit,
     onClose: () -> Unit,
     onDelete: (MediaItem) -> Unit,
     onAddToAlbum: (MediaItem) -> Unit,
@@ -235,7 +236,8 @@ fun Viewer(
             // this is meant to read as the photo and its details together.
             scrimColor = Color.Transparent,
         ) {
-            MediaDetails(current, albumsFor(current), localFor(current), coverFor)
+            MediaDetails(current, albumsFor(current), localFor(current), coverFor,
+                         onOpenAlbum)
         }
     }
 }
@@ -257,6 +259,7 @@ private fun MediaDetails(
     albums: List<Album>,
     local: LocalMedia.Local?,
     coverFor: (Album) -> Any?,
+    onOpenAlbum: (Album) -> Unit,
 ) {
     Column(
         Modifier
@@ -276,8 +279,16 @@ private fun MediaDetails(
         if (albums.isNotEmpty()) {
             SectionTitle("Albums")
             albums.forEach { album ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
+                // The sheet already names the albums a photo is in; being told
+                // where something lives and not being able to go there is the
+                // kind of dead end you only notice by trying it.
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onOpenAlbum(album) }
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     val cover = coverFor(album)
                     if (cover != null) {
                         AsyncImage(cover, null, contentScale = ContentScale.Crop,
