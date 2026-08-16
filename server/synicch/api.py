@@ -204,7 +204,7 @@ def index():
 
 def _reachable_addresses(conn) -> list[str]:
     from . import auth
-    primary = db.get_setting(conn, "public_url", "https://photos.ngserver")
+    primary = db.get_setting(conn, "public_url", "https://synicch.local")
     return [primary] + [a for a in auth.local_addresses() if a != primary]
 
 

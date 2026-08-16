@@ -7,11 +7,10 @@
 
         This is a base-config rather than a per-domain rule on purpose. The app
         must be able to reach the server by raw IP as well as by hostname,
-        because a home network that hands out a public DNS server alongside
-        Pi-hole will authoritatively deny .ngserver names about half the time.
-        Pinning the CA to the hostname alone would mean the IP fallback fails
-        its TLS handshake - precisely when it is needed most. LAN addresses can
-        also change with DHCP, so enumerating them here would rot.
+        as local network DNS resolution is not always reliable. Pinning the CA
+        to the hostname alone would mean the IP fallback fails its TLS handshake -
+        precisely when it is needed most. LAN addresses can also change with
+        DHCP, so enumerating them here would rot.
 
         The system certificates stay trusted, so ordinary HTTPS is unaffected.
         The only extra trust granted is to a CA whose private key lives on the

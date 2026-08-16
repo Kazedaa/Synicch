@@ -29,7 +29,7 @@ fun PairingScreen(
     busy: Boolean,
 ) {
     var manual by remember { mutableStateOf(false) }
-    var url by remember { mutableStateOf("https://photos.ngserver") }
+    var url by remember { mutableStateOf("https://synicch.local") }
     var token by remember { mutableStateOf("") }
 
     // Centring inside a scrollable column pushed the first child off the top of

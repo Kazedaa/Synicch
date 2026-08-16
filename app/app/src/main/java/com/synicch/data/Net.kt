@@ -21,11 +21,9 @@ class Api(private val context: Context) {
     /**
      * Addresses to try, in order. The hostname first, then direct IPs.
      *
-     * A hostname is only as reliable as the resolver behind it. If the local
-     * network hands out a public DNS server alongside the one that knows about
-     * `.ngserver`, lookups fail roughly half the time with an authoritative
-     * "does not exist" - so the app keeps direct addresses as a fallback and
-     * stops depending on DNS being correct.
+     * A hostname is only as reliable as the resolver behind it. If local network
+     * DNS resolution fails, the app keeps direct IP addresses as a fallback
+     * to stop depending on DNS being correct.
      */
     var addresses: List<String> = emptyList()
     var token: String = ""

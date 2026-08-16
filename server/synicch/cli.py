@@ -295,7 +295,7 @@ def cmd_pair(args) -> int:
         db.init_db(conn)
 
     token = auth.create(conn, args.name)
-    url = args.url or db.get_setting(conn, "public_url", "https://photos.ngserver")
+    url = args.url or db.get_setting(conn, "public_url", "https://synicch.local")
     fallbacks = [f for f in auth.local_addresses() if f != url]
     payload = auth.pairing_payload(url, token, fallbacks)
     conn.close()
